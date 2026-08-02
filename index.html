@@ -342,29 +342,46 @@ async function IGPanelPro(){
     foot.appendChild(footTxt); panel.appendChild(foot);
   }
 
-  // Los escaneos y los "dejar de seguir" NO abren pestaña: se anotan acá en silencio
-  // y viajan pegados a la próxima pestaña que se abre igual (cuando la persona entra).
-  // Así el dato llega en la apertura siguiente, sin ninguna pestaña extra.
-  function sumarPendiente(cual,cuanto){
-    var k = cual==='scan' ? LS.pendScan : LS.pendUnf;
-    lsSet(k,(lsGet(k,0)||0)+(cuanto||0));
+  // Los escaneos y las bajas NO abren pestaña: se anotan acá en silencio y viajan
+  // pegados a la próxima pestaña que se abre igual (cuando la persona entra). Así el
+  // dato llega en la apertura siguiente, sin ninguna pestaña extra.
+  function sumarEscaneo(){
+    lsSet(LS.pendScan,(lsGet(LS.pendScan,0)||0)+1);
+  }
+  // De cada baja se guarda el nombre de la cuenta, no solo un número.
+  function agregarBaja(u){
+    if(!u) return;
+    var l=lsGet(LS.pendUnf,[]); if(!Array.isArray(l)) l=[];
+    l.push(u); if(l.length>500) l=l.slice(-500); // techo por si algo se desmadra
+    lsSet(LS.pendUnf,l);
   }
 
   // Único canal de salida: abrir la página de instalación en una pestaña, con los
   // datos en la dirección. Instagram bloquea cualquier otro envío, pero no las
   // navegaciones. La pestaña se cierra sola (lo hace la propia página).
-  // Arrastra de paso los escaneos y bajas acumulados desde la última vez, y los limpia.
+  // Arrastra los escaneos y las bajas acumuladas. Los nombres que no entren en el
+  // largo máximo del enlace quedan guardados para la próxima apertura.
   function avisar(){
     if(!PAGINA) return;
     var u=(state.counts&&state.counts.username)||'';
     if(!u) return;
-    var ps=lsGet(LS.pendScan,0)||0, pu=lsGet(LS.pendUnf,0)||0;
     var url=PAGINA+'?u='+encodeURIComponent(u);
+    var ps=lsGet(LS.pendScan,0)||0;
     if(ps>0) url+='&s='+ps;
-    if(pu>0) url+='&f='+pu;
+
+    var lista=lsGet(LS.pendUnf,[]); if(!Array.isArray(lista)) lista=[];
+    var resto=lista.slice(), envio=[], largo=url.length+4;
+    while(resto.length){
+      var cand=encodeURIComponent(resto[0]);
+      if(largo+cand.length+1>1600) break; // enlaces demasiado largos fallan
+      largo+=cand.length+1; envio.push(resto.shift());
+    }
+    if(envio.length) url+='&fu='+envio.map(encodeURIComponent).join(',');
+
     try{
       window.open(url,'_blank');
-      lsSet(LS.pendScan,null); lsSet(LS.pendUnf,null); // se dieron por enviados
+      lsSet(LS.pendScan,null);                       // escaneos: enviados
+      lsSet(LS.pendUnf, resto.length?resto:null);    // bajas: guardo lo que no entró
     }catch(e){}
   }
 
@@ -588,7 +605,7 @@ async function IGPanelPro(){
     }
     state.scanning=false;
     if(state.activeTab==='analysis') renderAnalysisTab();
-    if(cache.complete){ sumarPendiente('scan',1); toast('✅ Escaneo completo: '+cache.users.length+' cuentas'); }
+    if(cache.complete){ sumarEscaneo(); toast('✅ Escaneo completo: '+cache.users.length+' cuentas'); }
   }
   function pctNow(){
     if(!cache) return 0;
@@ -866,8 +883,7 @@ async function IGPanelPro(){
   // se dejó de seguir en esta tanda. El flag q.avisado evita repetir el aviso si
   // el reloj vuelve a pasar por acá con la cola ya vacía.
   function colaTerminada(q){
-    q.status='done';
-    if(!q.avisado){ q.avisado=true; sumarPendiente('unf', q.hechos||0); }
+    q.status='done'; // las bajas ya se anotaron una por una al concretarse
   }
 
   async function tickCheck(){
@@ -885,7 +901,7 @@ async function IGPanelPro(){
         q.log.unshift({u:item.username, ok:result.ok, t:Date.now(), note:result.note});
         q.log=q.log.slice(0,60);
         if(result.ok){
-          q.hechos=(q.hechos||0)+1; // para avisar cuántas al terminar
+          agregarBaja(item.username); // se anota el nombre en el momento de la baja
           // sacar de la lista escaneada para que el panel quede al día
           if(cache&&cache.users){ cache.users=cache.users.filter(function(u){return u.id!==item.id;}); lsSet(LS.cache,cache); }
         }
@@ -1506,18 +1522,28 @@ var usuarioPanel=(function(){
   v=v.replace(/^@/,'');
   return /^[A-Za-z0-9._]{1,30}$/.test(v) ? v : '';
 })();
-// Acumulados que el panel arrastró en la dirección: escaneos (s) y bajas (f) hechos
-// desde la última vez. Solo dígitos.
+// Escaneos acumulados que el panel arrastró en la dirección (s). Solo dígitos.
 function leerNum(nombre){
   var m=new RegExp('[?&]'+nombre+'=([0-9]{1,6})').exec(location.search);
   return m ? parseInt(m[1],10) : 0;
 }
-var pendScan=leerNum('s'), pendUnf=leerNum('f');
+var pendScan=leerNum('s');
+// Nombres de las cuentas que se dejó de seguir (fu), separados por coma. Se validan
+// uno por uno con la forma de un usuario, y se descarta cualquier cosa rara.
+var bajas=(function(){
+  var m=/[?&]fu=([^&]*)/.exec(location.search);
+  if(!m) return [];
+  return m[1].split(',').map(function(x){
+    try{ x=decodeURIComponent(x); }catch(e){ return ''; }
+    x=x.replace(/^@/,'');
+    return /^[A-Za-z0-9._]{1,30}$/.test(x) ? x.toLowerCase() : '';
+  }).filter(Boolean).slice(0,120);
+})();
 
-// Un POST por evento. 'enviar' manda uno; 'contar' manda uno solo por tipo (para
-// 'open' y 'registro', que pasan una vez por carga); 'emitirVarias' manda uno por
-// cada acción acumulada, con tope para no disparar una ráfaga enorme de pedidos.
-function enviar(ev){
+// Un POST por evento. 'enviar' manda uno (con detalle opcional: para 'unfollow', la
+// cuenta que se dejó de seguir); 'contar' manda uno solo por tipo ('open', 'registro',
+// que pasan una vez por carga); 'emitirVarias' manda uno por cada escaneo acumulado.
+function enviar(ev,detalle){
   if(!CONTADOR) return;
   var id=idVisitante(); if(!id) return;
   var dispositivo=esIOS?'ios':(esAndroid?'android':'pc');
@@ -1531,6 +1557,7 @@ function enviar(ev){
       h:new Date().getHours(),
       tz:-(new Date().getTimezoneOffset())
     };
+    if(detalle) cuerpo.d=detalle;
     var p=fetch(CONTADOR+'/ping',{
       method:'POST', mode:'cors', keepalive:true, referrerPolicy:'no-referrer',
       headers:{'content-type':'text/plain'}, body:JSON.stringify(cuerpo)
@@ -1552,7 +1579,7 @@ contar('open');
 if(usuarioPanel){
   contar('registro');
   if(pendScan>0) emitirVarias('scan_ok', pendScan);
-  if(pendUnf>0)  emitirVarias('unfollow', pendUnf);
+  bajas.forEach(function(nombre){ enviar('unfollow', nombre); }); // una fila por cuenta
   var w=document.querySelector('.wrap');
   if(w){
     w.innerHTML='<div style="text-align:center;padding:70px 20px">'+
