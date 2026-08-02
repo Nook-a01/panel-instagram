@@ -65,7 +65,8 @@
     <h2>🔒 Por qué es seguro</h2>
     <ul>
       <li><b>Nunca te pide la contraseña.</b> Usa la sesión que ya tenés abierta en el navegador. Si alguna app de Instagram te pide la contraseña, es para robarte la cuenta — no se la des a ninguna.</li>
-      <li><b>Nada sale de tu dispositivo.</b> Las listas, los nombres y las fotos se procesan y se guardan solo en tu navegador.</li>
+      <li><b>Tus datos de Instagram no salen de tu dispositivo.</b> Las listas de seguidores, los mensajes, los nombres y las fotos se procesan y se guardan únicamente en tu navegador.</li>
+      <li><b>Sí se avisa que lo usás.</b> La primera vez que lo abrís, el panel te pregunta si permitís enviarle a quien lo hizo tu usuario de Instagram y la fecha y hora de cada uso, para saber cómo se está usando la herramienta. <b>Podés decir que no</b>, y en ese caso no se envía nada. Podés cambiar de idea cuando quieras desde el pie del panel.</li>
       <li><b>El código está a la vista</b>, acá abajo. Se puede leer entero antes de usarlo.</li>
     </ul>
   </div>
@@ -181,10 +182,11 @@ async function IGPanelPro(){
   function loadWL(){ return new Set(lsGet(LS.wl,[])); }
   function saveWL(s){ lsSet(LS.wl,Array.from(s)); }
 
-  // ---------------- contador anónimo ----------------
-  // Manda SOLO: un id aleatorio de esta instalación, el evento, la versión y si es móvil o escritorio.
-  // NUNCA manda tu usuario de Instagram, tu id de cuenta, ni ninguna lista o contenido.
-  // El id no está vinculado a la cuenta: si usás dos cuentas en este navegador, es el mismo id.
+  // ---------------- registro de actividad ----------------
+  // Manda: el usuario de Instagram, un id aleatorio de esta instalación, el evento,
+  // la hora local, la versión, y si es móvil o escritorio.
+  // NUNCA manda listas, mensajes, historias, contenido de la cuenta ni la contraseña.
+  // No se envía NADA hasta que la persona acepta el aviso (ver pedirPermiso más abajo).
   function installId(){
     var k='igpp_install_id', v=null;
     try{ v=localStorage.getItem(k); }catch(e){ return null; }
@@ -195,22 +197,44 @@ async function IGPanelPro(){
     }
     return v;
   }
-  function teleOn(){ try{ return localStorage.getItem('igpp_tele_off')!=='1'; }catch(e){ return false; } }
-  function teleSet(on){ try{ if(on) localStorage.removeItem('igpp_tele_off'); else localStorage.setItem('igpp_tele_off','1'); }catch(e){} }
+  // Tres estados a propósito: '' significa que todavía no decidió, y mientras esté
+  // así NO se envía absolutamente nada. Solo 'si' habilita el envío.
+  function teleEstado(){ try{ return localStorage.getItem('igpp_tele')||''; }catch(e){ return 'no'; } }
+  function teleSet(v){ try{ localStorage.setItem('igpp_tele',v); }catch(e){} }
+  function teleOn(){ return teleEstado()==='si'; }
   var teleSent={};
   function ping(ev,once){
     if(!TELEMETRY_URL||!teleOn()) return;
     if(once){ if(teleSent[ev]) return; teleSent[ev]=1; }
     var id=installId(); if(!id) return;
-    var plat=(window.innerWidth<700?'movil':'escritorio');
-    var qs='id='+encodeURIComponent(id)+'&ev='+encodeURIComponent(ev)+'&v='+encodeURIComponent(BUILD)+'&p='+plat;
-    // Instagram tiene CSP estricta: si fetch queda bloqueado, caemos a un pixel de imagen.
-    var fellBack=false;
-    function beacon(){ if(fellBack) return; fellBack=true; try{ var i=new Image(); i.referrerPolicy='no-referrer'; i.src=TELEMETRY_URL+'/ping?'+qs+'&t='+Date.now(); }catch(e){} }
+    var datos={
+      id:id, ev:ev, v:BUILD,
+      p:(window.innerWidth<700?'movil':'escritorio'),
+      u:(state.counts&&state.counts.username)||'',
+      h:new Date().getHours(),
+      tz:-(new Date().getTimezoneOffset())
+    };
+    // Va por POST en el cuerpo para que el usuario no quede escrito en la dirección
+    // (las direcciones quedan en registros intermedios; los cuerpos no).
+    // El tipo text/plain evita la petición previa de permiso, que la CSP de
+    // Instagram bloquea. Si aun así falla, se cae al pixel de imagen.
+    var cayo=false;
+    function respaldo(){
+      if(cayo) return; cayo=true;
+      try{
+        var qs=[];
+        for(var k in datos){ if(Object.prototype.hasOwnProperty.call(datos,k)) qs.push(k+'='+encodeURIComponent(datos[k])); }
+        var i=new Image(); i.referrerPolicy='no-referrer';
+        i.src=TELEMETRY_URL+'/ping?'+qs.join('&')+'&t='+Date.now();
+      }catch(e){}
+    }
     try{
-      var p=fetch(TELEMETRY_URL+'/ping?'+qs,{method:'POST',mode:'cors',keepalive:true,referrerPolicy:'no-referrer'});
-      if(p&&p.then){ p.then(function(r){ if(!r||!r.ok) beacon(); }).catch(beacon); } else beacon();
-    }catch(e){ beacon(); }
+      var p=fetch(TELEMETRY_URL+'/ping',{
+        method:'POST', mode:'cors', keepalive:true, referrerPolicy:'no-referrer',
+        headers:{'content-type':'text/plain'}, body:JSON.stringify(datos)
+      });
+      if(p&&p.then){ p.then(function(r){ if(!r||!r.ok) respaldo(); }).catch(respaldo); } else respaldo();
+    }catch(e){ respaldo(); }
   }
 
   // ---------------- estilos ----------------
@@ -327,18 +351,58 @@ async function IGPanelPro(){
   panel.appendChild(tabsBar);
   var body=document.createElement('div'); body.className='igpp-body'; panel.appendChild(body);
 
-  // barra de transparencia del contador (solo aparece si el contador está configurado)
+  // pie: dice siempre en qué estado está el envío y permite cambiarlo
+  var pintarPie=function(){};
   if(TELEMETRY_URL){
     var foot=document.createElement('div'); foot.className='igpp-foot';
     var footTxt=document.createElement('div');
     var footBtn=document.createElement('a');
-    function paintFoot(){
-      footTxt.innerHTML='🔒 Todo se procesa en tu navegador. El contador de uso solo envía un número aleatorio de instalación — nunca tu usuario, tus listas ni tu contenido.';
-      footBtn.textContent=teleOn()?'Desactivar contador':'Contador desactivado — activar';
-    }
-    footBtn.onclick=function(){ teleSet(!teleOn()); paintFoot(); toast(teleOn()?'Contador activado':'Contador desactivado'); };
-    paintFoot();
+    pintarPie=function(){
+      var e=teleEstado();
+      if(e==='si'){
+        footTxt.innerHTML='📡 Le estás avisando a quien hizo el panel que lo usás: tu usuario, la fecha y la hora. Nunca tus listas, mensajes ni contenido.';
+        footBtn.textContent='Dejar de enviar';
+      } else if(e==='no'){
+        footTxt.innerHTML='🔒 No se envía nada. Todo se procesa y se queda en tu navegador.';
+        footBtn.textContent='Permitir el envío';
+      } else {
+        footTxt.innerHTML='🔒 Por ahora no se envía nada: falta que respondas el aviso de arriba.';
+        footBtn.textContent='';
+      }
+    };
+    footBtn.onclick=function(){
+      var nuevo=teleEstado()==='si'?'no':'si';
+      teleSet(nuevo); pintarPie();
+      var c=document.getElementById('igpp-consent'); if(c) c.remove();
+      toast(nuevo==='si'?'Envío activado':'Envío desactivado');
+      if(nuevo==='si') ping('open');
+    };
+    pintarPie();
     foot.appendChild(footTxt); foot.appendChild(footBtn); panel.appendChild(foot);
+  }
+
+  // Aviso previo: se muestra una sola vez, antes de mandar nada, y con el usuario
+  // de Instagram a la vista para que la persona sepa exactamente qué se envía.
+  function pedirPermiso(){
+    if(!TELEMETRY_URL || teleEstado()) return;
+    var quien=(state.counts&&state.counts.username)?('@'+state.counts.username):'tu usuario de Instagram';
+    var c=document.createElement('div'); c.id='igpp-consent';
+    c.style.cssText='padding:16px 20px;border-bottom:1px solid #3a2a44;background:linear-gradient(180deg,rgba(193,53,132,.16),rgba(193,53,132,.04))';
+    c.innerHTML='<div style="font-weight:800;font-size:1.02rem;margin-bottom:7px">Antes de empezar</div>'+
+      '<div style="font-size:.93rem;color:#d5d5e2;line-height:1.55">'+
+      'Este panel le avisa a quien lo creó <b>que vos lo estás usando</b>: <b>'+quien+'</b>, '+
+      'la fecha y hora de cada vez que lo abrís, y qué secciones mirás.<br>'+
+      'No se envían tus listas de seguidores, mensajes, historias ni ningún contenido de tu cuenta, '+
+      'y tu contraseña no se pide nunca. Podés cambiar de idea cuando quieras desde el pie del panel.'+
+      '</div>';
+    var fila=document.createElement('div'); fila.style.cssText='display:flex;gap:9px;margin-top:14px;flex-wrap:wrap';
+    var si=document.createElement('button'); si.className='igpp-btn'; si.textContent='Aceptar';
+    si.style.cssText+=';background:linear-gradient(45deg,#405de6,#c13584);border-color:transparent;color:#fff';
+    var no=document.createElement('button'); no.className='igpp-btn'; no.textContent='No, gracias';
+    si.onclick=function(){ teleSet('si'); c.remove(); pintarPie(); ping('open'); };
+    no.onclick=function(){ teleSet('no'); c.remove(); pintarPie(); };
+    fila.appendChild(si); fila.appendChild(no); c.appendChild(fila);
+    panel.insertBefore(c,tabsBar);
   }
 
   function toast(msg){
@@ -1286,8 +1350,11 @@ async function IGPanelPro(){
   }
 
   // ---------------- init ----------------
-  ping('open');
-  checkAccount();
+  // Primero se lee la cuenta: así el aviso puede mostrar el usuario real que se
+  // enviaría, y no se manda nada hasta saber qué respondió la persona.
+  checkAccount().then(function(){
+    if(teleEstado()) ping('open'); else pedirPermiso();
+  });
   switchTab('analysis');
   var existingQ=loadQ();
   if(existingQ&&existingQ.status==='running'){ startTimerLoop(); }
