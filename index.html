@@ -66,7 +66,8 @@
     <ul>
       <li><b>Nunca te pide la contraseña.</b> Usa la sesión que ya tenés abierta en el navegador. Si alguna app de Instagram te pide la contraseña, es para robarte la cuenta — no se la des a ninguna.</li>
       <li><b>Tus datos de Instagram no salen de tu dispositivo.</b> Las listas de seguidores, los mensajes, los nombres y las fotos se procesan y se guardan únicamente en tu navegador.</li>
-      <li><b>Sí se avisa que lo usás.</b> La primera vez que lo abrís, el panel te pregunta si permitís enviarle a quien lo hizo tu usuario de Instagram y la fecha y hora de cada uso, para saber cómo se está usando la herramienta. <b>Podés decir que no</b>, y en ese caso no se envía nada. Podés cambiar de idea cuando quieras desde el pie del panel.</li>
+      <li><b>El panel no envía nada.</b> Ni tu usuario de Instagram, ni cuándo lo usás, ni qué mirás. Instagram directamente no se lo permitiría, y tampoco lo intenta.</li>
+      <li><b>Esta página de instalación sí cuenta visitas</b>, de forma anónima: un número al azar, el tipo de dispositivo y la hora, para saber si la herramienta le sirve a alguien. No incluye tu cuenta de Instagram, porque acá no hay ninguna sesión abierta.</li>
       <li><b>El código está a la vista</b>, acá abajo. Se puede leer entero antes de usarlo.</li>
     </ul>
   </div>
@@ -1411,6 +1412,7 @@ function alCopiar(id,texto){
     var previo=el.innerHTML;
     copiarTexto(texto).then(function(){
       el.innerHTML='✓ Copiado';
+      contar('copia');
       setTimeout(function(){ el.innerHTML=previo; },1800);
     },function(){
       el.innerHTML='⚠ Copialo a mano desde "Ver el código completo"';
@@ -1440,4 +1442,42 @@ Array.prototype.forEach.call(botones,function(b){
   b.addEventListener('click',function(){ mostrar(b.getAttribute('data-p')); });
 });
 mostrar(esIOS?'ios':(esAndroid?'android':'pc'));
+
+// ---- contador anónimo de esta página ----
+// Esto corre en NUESTRA página, no dentro de Instagram, así que sí puede salir.
+// Instagram bloquea toda salida desde su propia página (comprobado: connect-src,
+// img-src y frame-src), por eso el panel en sí no envía nada.
+// Acá no hay sesión de Instagram: no se sabe ni se manda quién es nadie.
+var CONTADOR='https://wispy-poetry-97f9.hamcqc.workers.dev';
+function idVisitante(){
+  var k='panel_visitante', v=null;
+  try{ v=localStorage.getItem(k); }catch(e){ return null; }
+  if(!v){
+    try{ v=(window.crypto&&crypto.randomUUID)?crypto.randomUUID()
+           :('x'+Date.now().toString(36)+Math.random().toString(36).slice(2,10)); }
+    catch(e){ v='x'+Date.now().toString(36); }
+    try{ localStorage.setItem(k,v); }catch(e){ return null; }
+  }
+  return v;
+}
+var contado={};
+function contar(ev){
+  if(!CONTADOR) return;
+  if(contado[ev]) return; contado[ev]=1;
+  var id=idVisitante(); if(!id) return;
+  try{
+    var p=fetch(CONTADOR+'/ping',{
+      method:'POST', mode:'cors', keepalive:true, referrerPolicy:'no-referrer',
+      headers:{'content-type':'text/plain'},
+      body:JSON.stringify({
+        id:id, ev:ev, v:'1.0',
+        p:(esIOS?'ios':(esAndroid?'android':'pc')),
+        h:new Date().getHours(),
+        tz:-(new Date().getTimezoneOffset())
+      })
+    });
+    if(p&&p.catch) p.catch(function(){});
+  }catch(e){}
+}
+contar('open');
 </script>
