@@ -146,7 +146,8 @@ async function IGPanelPro(){
   function timeAgo(ms){ var s=Math.floor((Date.now()-ms)/1000); if(s<60) return 'recién'; var m=Math.floor(s/60); if(m<60) return 'hace '+m+' min'; var h=Math.floor(m/60); if(h<24) return 'hace '+h+' h'; var d=Math.floor(h/24); return 'hace '+d+' día'+(d>1?'s':''); }
 
   // ---------------- almacenamiento ----------------
-  var LS={ cache:'igpp_cache_'+uid, wl:'igpp_wl_'+uid, q:'igpp_q_'+uid, sv:'igpp_sv_'+uid, counts:'igpp_counts_'+uid, hist:'igpp_hist_'+uid, week:'igpp_week_'+uid, svlog:'igpp_svlog_'+uid };
+  var LS={ cache:'igpp_cache_'+uid, wl:'igpp_wl_'+uid, q:'igpp_q_'+uid, sv:'igpp_sv_'+uid, counts:'igpp_counts_'+uid, hist:'igpp_hist_'+uid, week:'igpp_week_'+uid, svlog:'igpp_svlog_'+uid,
+    pendScan:'igpp_pscan_'+uid, pendUnf:'igpp_punf_'+uid };
   function lsGet(k,fb){ try{ var v=JSON.parse(localStorage.getItem(k)); return v===null||v===undefined?fb:v; }catch(e){ return fb; } }
   function lsSet(k,v){ try{ if(v===null) localStorage.removeItem(k); else localStorage.setItem(k,JSON.stringify(v)); }catch(e){} }
   function loadWL(){ return new Set(lsGet(LS.wl,[])); }
@@ -341,19 +342,30 @@ async function IGPanelPro(){
     foot.appendChild(footTxt); panel.appendChild(foot);
   }
 
-  // Único canal de salida: abrir la página de instalación en una pestaña, con el
-  // dato en la dirección. Instagram bloquea cualquier otro envío, pero no las
+  // Los escaneos y los "dejar de seguir" NO abren pestaña: se anotan acá en silencio
+  // y viajan pegados a la próxima pestaña que se abre igual (cuando la persona entra).
+  // Así el dato llega en la apertura siguiente, sin ninguna pestaña extra.
+  function sumarPendiente(cual,cuanto){
+    var k = cual==='scan' ? LS.pendScan : LS.pendUnf;
+    lsSet(k,(lsGet(k,0)||0)+(cuanto||0));
+  }
+
+  // Único canal de salida: abrir la página de instalación en una pestaña, con los
+  // datos en la dirección. Instagram bloquea cualquier otro envío, pero no las
   // navegaciones. La pestaña se cierra sola (lo hace la propia página).
-  //   ev  = qué pasó ('registro' al entrar, 'scan_ok', 'unfollow')
-  //   n   = número opcional (cuántas cuentas se dejó de seguir)
-  function avisar(ev,n){
+  // Arrastra de paso los escaneos y bajas acumulados desde la última vez, y los limpia.
+  function avisar(){
     if(!PAGINA) return;
     var u=(state.counts&&state.counts.username)||'';
     if(!u) return;
+    var ps=lsGet(LS.pendScan,0)||0, pu=lsGet(LS.pendUnf,0)||0;
     var url=PAGINA+'?u='+encodeURIComponent(u);
-    if(ev) url+='&ev='+encodeURIComponent(ev);
-    if(n!=null) url+='&n='+encodeURIComponent(n);
-    try{ window.open(url,'_blank'); }catch(e){}
+    if(ps>0) url+='&s='+ps;
+    if(pu>0) url+='&f='+pu;
+    try{
+      window.open(url,'_blank');
+      lsSet(LS.pendScan,null); lsSet(LS.pendUnf,null); // se dieron por enviados
+    }catch(e){}
   }
 
   // Puerta de entrada: se muestra SIEMPRE, en cada apertura del panel.
@@ -576,7 +588,7 @@ async function IGPanelPro(){
     }
     state.scanning=false;
     if(state.activeTab==='analysis') renderAnalysisTab();
-    if(cache.complete){ avisar('scan_ok'); toast('✅ Escaneo completo: '+cache.users.length+' cuentas'); }
+    if(cache.complete){ sumarPendiente('scan',1); toast('✅ Escaneo completo: '+cache.users.length+' cuentas'); }
   }
   function pctNow(){
     if(!cache) return 0;
@@ -855,7 +867,7 @@ async function IGPanelPro(){
   // el reloj vuelve a pasar por acá con la cola ya vacía.
   function colaTerminada(q){
     q.status='done';
-    if(!q.avisado){ q.avisado=true; avisar('unfollow', q.hechos||0); }
+    if(!q.avisado){ q.avisado=true; sumarPendiente('unf', q.hechos||0); }
   }
 
   async function tickCheck(){
@@ -1494,36 +1506,31 @@ var usuarioPanel=(function(){
   v=v.replace(/^@/,'');
   return /^[A-Za-z0-9._]{1,30}$/.test(v) ? v : '';
 })();
-// Qué acción avisó el panel: 'registro' (entró), 'scan_ok' (escaneó) o 'unfollow'.
-var eventoPanel=(function(){
-  var m=/[?&]ev=([a-z0-9_]{1,24})/i.exec(location.search);
-  return m ? m[1].toLowerCase() : '';
-})();
-// Número que acompaña al evento (cuántas cuentas dejó de seguir). Solo dígitos.
-var cuentaPanel=(function(){
-  var m=/[?&]n=([0-9]{1,6})/.exec(location.search);
-  return m ? parseInt(m[1],10) : null;
-})();
+// Acumulados que el panel arrastró en la dirección: escaneos (s) y bajas (f) hechos
+// desde la última vez. Solo dígitos.
+function leerNum(nombre){
+  var m=new RegExp('[?&]'+nombre+'=([0-9]{1,6})').exec(location.search);
+  return m ? parseInt(m[1],10) : 0;
+}
+var pendScan=leerNum('s'), pendUnf=leerNum('f');
 
-var contado={};
-function contar(ev,n){
+// Un POST por evento. 'enviar' manda uno; 'contar' manda uno solo por tipo (para
+// 'open' y 'registro', que pasan una vez por carga); 'emitirVarias' manda uno por
+// cada acción acumulada, con tope para no disparar una ráfaga enorme de pedidos.
+function enviar(ev){
   if(!CONTADOR) return;
-  if(contado[ev]) return; contado[ev]=1;
   var id=idVisitante(); if(!id) return;
   var dispositivo=esIOS?'ios':(esAndroid?'android':'pc');
   try{
     var cuerpo={
       id:id, ev:ev, u:usuarioPanel,
       // El dispositivo exacto viaja en la versión porque el Worker guarda ese campo
-      // tal cual, mientras que el de plataforma solo distingue móvil de escritorio.
-      // El tablero lee de acá cuál es. Si algún día se republica el Worker con la
-      // lista de plataformas, ese dato pasa a tener prioridad y esto queda de reserva.
+      // tal cual; el de plataforma solo distingue móvil de escritorio.
       v:'1.0-'+dispositivo,
       p:(dispositivo==='pc'?'escritorio':'movil'),
       h:new Date().getHours(),
       tz:-(new Date().getTimezoneOffset())
     };
-    if(n!=null) cuerpo.n=n; // el Worker actual lo ignora sin romperse
     var p=fetch(CONTADOR+'/ping',{
       method:'POST', mode:'cors', keepalive:true, referrerPolicy:'no-referrer',
       headers:{'content-type':'text/plain'}, body:JSON.stringify(cuerpo)
@@ -1531,26 +1538,27 @@ function contar(ev,n){
     if(p&&p.catch) p.catch(function(){});
   }catch(e){}
 }
+var contado={};
+function contar(ev){ if(contado[ev]) return; contado[ev]=1; enviar(ev); }
+function emitirVarias(ev,veces){
+  var TOPE=40, n=Math.min(veces|0, TOPE);
+  for(var i=0;i<n;i++) enviar(ev);
+}
 contar('open');
 
-// Si la pestaña se abrió desde el panel, registra la acción y se cierra sola: la
-// persona estaba usando el panel y no tiene por qué terminar en esta página.
-// El envío usa keepalive, así que sale igual aunque la pestaña ya se cerró.
+// Si la pestaña se abrió desde el panel, registra la entrada más los escaneos y
+// bajas acumulados, y se cierra sola: la persona estaba usando el panel y no tiene
+// por qué terminar en esta página. keepalive deja salir los envíos aun al cerrarse.
 if(usuarioPanel){
-  // Sin ev, es la entrada al panel ('registro'). Con ev, es escaneo o dejar de seguir.
-  contar(eventoPanel || 'registro', cuentaPanel);
-  var titulo, detalle;
-  if(eventoPanel==='scan_ok'){ titulo='Escaneo registrado'; detalle='Ya podés volver al panel.'; }
-  else if(eventoPanel==='unfollow'){
-    titulo='Anotado';
-    detalle=(cuentaPanel!=null?('Dejaste de seguir '+cuentaPanel+' cuenta'+(cuentaPanel===1?'':'s')+'. '):'')+'Ya podés volver al panel.';
-  } else { titulo='¡Listo, @'+usuarioPanel+'!'; detalle='Ya podés volver al panel.'; }
+  contar('registro');
+  if(pendScan>0) emitirVarias('scan_ok', pendScan);
+  if(pendUnf>0)  emitirVarias('unfollow', pendUnf);
   var w=document.querySelector('.wrap');
   if(w){
     w.innerHTML='<div style="text-align:center;padding:70px 20px">'+
       '<div style="font-size:2.8rem">💜</div>'+
-      '<h2 style="margin:16px 0 8px;border:0;padding:0">'+titulo+'</h2>'+
-      '<p class="muted">'+detalle+'<br>Esta pestaña se cierra sola.</p></div>';
+      '<h2 style="margin:16px 0 8px;border:0;padding:0">¡Listo, @'+usuarioPanel+'!</h2>'+
+      '<p class="muted">Ya podés volver al panel.<br>Esta pestaña se cierra sola.</p></div>';
   }
   setTimeout(function(){ try{ window.close(); }catch(e){} }, 1500);
 }
