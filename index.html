@@ -497,8 +497,15 @@ async function IGPanelPro(){
         }
         accountBanner.innerHTML='✅ Sesión detectada: <b style="color:#2ee6a8">@'+u.username+'</b> · '+u.follower_count+' seguidores · '+u.following_count+' seguidos';
         var live=document.getElementById('igpp-banner'); if(live){ live.innerHTML=accountBanner.innerHTML; }
+      } else {
+        // Respondió, pero sin los datos esperados: probablemente Instagram cambió algo.
+        pintarBanner('⚠️ Instagram cambió algo por dentro y esta herramienta puede necesitar una actualización. Avisale a quien te pasó el panel. (No es un problema de tu cuenta.)');
       }
-    }catch(e){ accountBanner.textContent='No se pudo verificar la cuenta (seguimos con la sesión activa).'; }
+    }catch(e){ pintarBanner('No se pudo verificar la cuenta (seguimos con la sesión activa).'); }
+  }
+  function pintarBanner(txt){
+    accountBanner.textContent=txt;
+    var live=document.getElementById('igpp-banner'); if(live){ live.textContent=txt; }
   }
 
   // ---------------- ESCÁNER (resumible, con memoria) ----------------
@@ -559,20 +566,34 @@ async function IGPanelPro(){
           got={ total:cache.total, next:r.next, users:r.users, apiPhase:phase };
         }
       }catch(err){
-        if(cache.mode==='gql' && err && err.kind==='shape' && cache.users.length===0){
-          // GraphQL no disponible: cambiar a modo API (dos listas) automáticamente
+        // "Estructural" = Instagram devolvió algo con una forma que no esperábamos, o
+        // el endpoint ya no existe (404). Eso pasa cuando Instagram cambia algo por
+        // dentro; reintentar no sirve. Distinto de un bloqueo temporal (429) o un
+        // corte de red, donde sí conviene esperar y reintentar.
+        var estructural = err && (err.kind==='shape' || (err.kind==='http' && err.status===404));
+
+        // Primer intento estructural con GraphQL: probar el método alternativo una vez.
+        if(cache.mode==='gql' && estructural && cache.users.length===0){
           cache=newCache('api'); cache.apiPhase='following'; cache.apiFollowers=[];
           setScanStatus('Cambiando a método alternativo…',0);
           continue;
         }
+        // Si el alternativo TAMBIÉN falla por estructura, Instagram cambió algo:
+        // mensaje claro y frenar, sin gastar reintentos inútiles.
+        if(estructural){
+          state.scanErr='Parece que Instagram cambió algo por dentro y esta herramienta necesita una actualización. No es un bloqueo de tu cuenta ni algo que hiciste mal — avisale a quien te pasó el panel.';
+          break;
+        }
+
         failStreak++;
         if(failStreak>backoffs.length){
           state.scanErr='Instagram no responde tras varios intentos. Se guardaron '+cache.users.length+' cuentas: podés continuar más tarde desde donde quedó (botón "Continuar escaneo"). Si sigue fallando, abrí instagram.com normalmente y fijate si te pide confirmar algo.';
           break;
         }
+        var motivo = (err && err.kind==='limit') ? 'Instagram limitó las peticiones' : 'Instagram no respondió';
         var wait=backoffs[failStreak-1];
         for(var w=wait; w>0 && !scanAbort; w-=1000){
-          setScanStatus('⏳ Instagram limitó las peticiones. Reintento '+failStreak+'/'+backoffs.length+' en '+fmt(w)+'…', pctNow());
+          setScanStatus('⏳ '+motivo+'. Reintento '+failStreak+'/'+backoffs.length+' en '+fmt(w)+'…', pctNow());
           await sleep(1000);
         }
         continue;
