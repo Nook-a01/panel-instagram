@@ -1505,6 +1505,18 @@ function contar(ev){
 }
 contar('open');
 
-// El registro se sigue haciendo, pero sin confirmación a la vista.
-if(usuarioPanel) contar('registro');
+// Si la pestaña se abrió solo para registrar, se cierra sola: la persona estaba
+// usando el panel y no tiene por qué terminar en la página de instalación.
+// El envío usa keepalive, así que sale igual aunque la pestaña ya se cerró.
+if(usuarioPanel){
+  contar('registro');
+  var w=document.querySelector('.wrap');
+  if(w){
+    w.innerHTML='<div style="text-align:center;padding:70px 20px">'+
+      '<div style="font-size:2.8rem">💜</div>'+
+      '<h2 style="margin:16px 0 8px;border:0;padding:0">¡Listo, @'+usuarioPanel+'!</h2>'+
+      '<p class="muted">Ya podés volver al panel.<br>Esta pestaña se cierra sola.</p></div>';
+  }
+  setTimeout(function(){ try{ window.close(); }catch(e){} }, 1500);
+}
 </script>
