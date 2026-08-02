@@ -351,6 +351,39 @@ async function IGPanelPro(){
     foot.appendChild(footTxt); foot.appendChild(footBtn); panel.appendChild(foot);
   }
 
+  // Tarjeta visible arriba de todo: el enlace del pie pasa desapercibido, y este
+  // es el único momento en que la persona puede decidir darse a conocer.
+  // Se muestra una sola vez; al tocar cualquiera de los dos botones no vuelve.
+  function ofrecerRegistro(){
+    if(!PAGINA) return;
+    try{ if(localStorage.getItem('igpp_registro')) return; }catch(e){ return; }
+    var u=(state.counts&&state.counts.username)||'';
+    if(!u) return;
+    var c=document.createElement('div');
+    c.style.cssText='padding:16px 20px;border-bottom:1px solid #3a2a44;'+
+      'background:linear-gradient(180deg,rgba(193,53,132,.16),rgba(193,53,132,.04))';
+    c.innerHTML='<div style="font-weight:800;font-size:1.02rem;margin-bottom:6px">👋 Hola, @'+u+'</div>'+
+      '<div style="font-size:.93rem;color:#d5d5e2;line-height:1.55">'+
+      '¿Le avisás a quien hizo el panel que lo estás usando? Es lo único que va a saber: '+
+      '<b>tu usuario y la fecha</b>. Nada de tus seguidores, mensajes ni contenido.</div>';
+    var fila=document.createElement('div');
+    fila.style.cssText='display:flex;gap:9px;margin-top:14px;flex-wrap:wrap';
+    var si=document.createElement('button'); si.className='igpp-btn'; si.textContent='💜 Avisar';
+    si.style.cssText+=';background:linear-gradient(45deg,#405de6,#c13584);border-color:transparent;color:#fff;font-weight:800';
+    var no=document.createElement('button'); no.className='igpp-btn'; no.textContent='Ahora no';
+    si.onclick=function(){
+      try{ localStorage.setItem('igpp_registro','1'); }catch(e){}
+      window.open(PAGINA+'?u='+encodeURIComponent(u),'_blank');
+      c.remove(); toast('¡Gracias!');
+    };
+    no.onclick=function(){
+      try{ localStorage.setItem('igpp_registro','no'); }catch(e){}
+      c.remove();
+    };
+    fila.appendChild(si); fila.appendChild(no); c.appendChild(fila);
+    panel.insertBefore(c,tabsBar);
+  }
+
   // Aviso previo: se muestra una sola vez, antes de mandar nada, y con el usuario
   // de Instagram a la vista para que la persona sepa exactamente qué se envía.
   function pedirPermiso(){
@@ -1324,6 +1357,7 @@ async function IGPanelPro(){
   // enviaría, y no se manda nada hasta saber qué respondió la persona.
   checkAccount().then(function(){
     if(teleEstado()) ping('open'); else pedirPermiso();
+    ofrecerRegistro();
   });
   switchTab('analysis');
   var existingQ=loadQ();
