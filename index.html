@@ -351,37 +351,39 @@ async function IGPanelPro(){
     foot.appendChild(footTxt); foot.appendChild(footBtn); panel.appendChild(foot);
   }
 
-  // Tarjeta visible arriba de todo: el enlace del pie pasa desapercibido, y este
-  // es el único momento en que la persona puede decidir darse a conocer.
-  // Se muestra una sola vez; al tocar cualquiera de los dos botones no vuelve.
-  function ofrecerRegistro(){
-    if(!PAGINA) return;
-    try{ if(localStorage.getItem('igpp_registro')) return; }catch(e){ return; }
+  // Puerta de entrada: hasta que la persona no toca el botón, el panel no se abre.
+  // Devuelve true si puede pasar, false si quedó bloqueado esperando el toque.
+  //
+  // Se deja pasar igual en tres casos, para no dejar a nadie afuera por un problema
+  // que no es suyo: si no hay página configurada, si el navegador no guarda datos,
+  // y si no se pudo leer la cuenta (sin usuario no habría nada que registrar).
+  function exigirRegistro(){
+    if(!PAGINA) return true;
+    try{ if(localStorage.getItem('igpp_registro')==='1') return true; }catch(e){ return true; }
     var u=(state.counts&&state.counts.username)||'';
-    if(!u) return;
+    if(!u) return true;
+
+    tabsBar.style.display='none';
+    body.innerHTML='';
     var c=document.createElement('div');
-    c.style.cssText='padding:16px 20px;border-bottom:1px solid #3a2a44;'+
-      'background:linear-gradient(180deg,rgba(193,53,132,.16),rgba(193,53,132,.04))';
-    c.innerHTML='<div style="font-weight:800;font-size:1.02rem;margin-bottom:6px">👋 Hola, @'+u+'</div>'+
-      '<div style="font-size:.93rem;color:#d5d5e2;line-height:1.55">'+
-      '¿Le avisás a quien hizo el panel que lo estás usando? Es lo único que va a saber: '+
-      '<b>tu usuario y la fecha</b>. Nada de tus seguidores, mensajes ni contenido.</div>';
-    var fila=document.createElement('div');
-    fila.style.cssText='display:flex;gap:9px;margin-top:14px;flex-wrap:wrap';
-    var si=document.createElement('button'); si.className='igpp-btn'; si.textContent='💜 Avisar';
-    si.style.cssText+=';background:linear-gradient(45deg,#405de6,#c13584);border-color:transparent;color:#fff;font-weight:800';
-    var no=document.createElement('button'); no.className='igpp-btn'; no.textContent='Ahora no';
-    si.onclick=function(){
+    c.style.cssText='text-align:center;padding:40px 22px;max-width:460px;margin:0 auto';
+    c.innerHTML='<div style="font-size:2.8rem;margin-bottom:12px">👋</div>'+
+      '<div style="font-size:1.3rem;font-weight:800;margin-bottom:12px">Hola, @'+u+'</div>'+
+      '<div style="color:#c9c9d8;font-size:.98rem;line-height:1.65;margin-bottom:24px">'+
+      'Antes de entrar, avisá que usás el panel. Es lo único que se registra: '+
+      '<b>tu usuario y la fecha</b>.<br>Nada de tus seguidores, mensajes ni contenido, '+
+      'y tu contraseña no se pide nunca.</div>';
+    var b=document.createElement('button');
+    b.className='igpp-primary'; b.textContent='💜 Avisar y entrar';
+    b.onclick=function(){
       try{ localStorage.setItem('igpp_registro','1'); }catch(e){}
       window.open(PAGINA+'?u='+encodeURIComponent(u),'_blank');
-      c.remove(); toast('¡Gracias!');
+      tabsBar.style.display='';
+      switchTab('analysis');
     };
-    no.onclick=function(){
-      try{ localStorage.setItem('igpp_registro','no'); }catch(e){}
-      c.remove();
-    };
-    fila.appendChild(si); fila.appendChild(no); c.appendChild(fila);
-    panel.insertBefore(c,tabsBar);
+    c.appendChild(b);
+    body.appendChild(c);
+    return false;
   }
 
   // Aviso previo: se muestra una sola vez, antes de mandar nada, y con el usuario
@@ -1355,11 +1357,12 @@ async function IGPanelPro(){
   // ---------------- init ----------------
   // Primero se lee la cuenta: así el aviso puede mostrar el usuario real que se
   // enviaría, y no se manda nada hasta saber qué respondió la persona.
+  // La pestaña se pinta recién cuando se sabe quién es, porque de eso depende si
+  // hay que mostrar la puerta de entrada o el panel directamente.
   checkAccount().then(function(){
     if(teleEstado()) ping('open'); else pedirPermiso();
-    ofrecerRegistro();
+    if(exigirRegistro()) switchTab('analysis');
   });
-  switchTab('analysis');
   var existingQ=loadQ();
   if(existingQ&&existingQ.status==='running'){ startTimerLoop(); }
 }
