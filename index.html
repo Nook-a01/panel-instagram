@@ -1,5 +1,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<!-- Seguridad (defensa en profundidad para una página que no guarda nada sensible):
+     - la página solo puede conectarse a su propio Worker; ningún otro destino.
+     - no carga scripts ni estilos externos, solo los propios de la página.
+     - no filtra la dirección de origen al navegar. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data: https://wispy-poetry-97f9.hamcqc.workers.dev; connect-src https://wispy-poetry-97f9.hamcqc.workers.dev; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
 <title>Panel de Instagram — Instalación</title>
 <style>
   :root{--bg:#08080c;--card:#101018;--text:#f4f4f8;--muted:#8f8fa3;--border:#232332;
