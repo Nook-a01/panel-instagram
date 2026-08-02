@@ -234,7 +234,13 @@ async function IGPanelPro(){
   '.igpp-tabs{display:flex;gap:6px;padding:12px 18px;border-bottom:1px solid #232336;overflow-x:auto}'+
   '.igpp-tab{background:none;border:1px solid transparent;color:#8f8fa3;padding:11px 18px;cursor:pointer;font-weight:700;font-size:1rem;border-radius:12px;white-space:nowrap;transition:all .15s}'+
   '.igpp-tab:hover{color:#ddd}'+
-  '.igpp-tab:focus,.igpp-tab:focus-visible,.igpp-btn:focus,.igpp-btn:focus-visible,.igpp-close:focus,.igpp-primary:focus,.igpp-danger:focus{outline:none;box-shadow:none}'+
+  // Al hacer clic no se marca el foco (era el anillo blanco que molestaba), pero al
+  // navegar con el teclado sí: sin eso, quien no usa mouse no sabe dónde está parado.
+  '.igpp-tab:focus,.igpp-btn:focus,.igpp-close:focus,.igpp-primary:focus,.igpp-danger:focus{outline:none}'+
+  '.igpp-tab:focus-visible,.igpp-btn:focus-visible,.igpp-close:focus-visible,'+
+  '.igpp-primary:focus-visible,.igpp-danger:focus-visible,.igpp-pill:focus-visible,'+
+  '.igpp-cb:focus-visible,.igpp-input:focus-visible,.igpp-user:focus-visible'+
+  '{outline:3px solid #b98cff;outline-offset:2px;border-radius:10px}'+
   '.igpp-tab.on{color:#fff;background:linear-gradient(45deg,rgba(64,93,230,.25),rgba(193,53,132,.25));border-color:#3a3a55}'+
   '.igpp-body{padding:20px 24px;overflow:auto;flex:1;font-size:1rem}'+
   '.igpp-chip{display:inline-flex;align-items:center;gap:7px;background:#1a1a28;border:1px solid #2a2a40;border-radius:999px;padding:7px 14px;font-size:.9rem;color:#c9c9d8}'+
@@ -281,9 +287,10 @@ async function IGPanelPro(){
     '.igpp-head{padding:11px 13px}'+
     '.igpp-logo{font-size:1rem;gap:8px}'+
     '.igpp-logodot{width:24px;height:24px;border-radius:7px}'+
-    '.igpp-close{width:38px;height:38px}'+
-    '.igpp-tabs{padding:8px 10px;gap:5px;-webkit-overflow-scrolling:touch}'+
-    '.igpp-tab{padding:10px 13px;font-size:.9rem;border-radius:10px}'+
+    // 44px es el mínimo para que un dedo acierte sin errarle al botón de al lado.
+    '.igpp-close{width:44px;height:44px;font-size:1.3rem}'+
+    '.igpp-tabs{padding:8px 10px;gap:6px;-webkit-overflow-scrolling:touch}'+
+    '.igpp-tab{padding:11px 14px;font-size:.9rem;border-radius:10px;min-height:44px}'+
     '.igpp-body{padding:14px 13px}'+
     '.igpp-statgrid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}'+
     '.igpp-stat{padding:15px 8px;min-height:84px;border-radius:14px}'+
@@ -298,8 +305,9 @@ async function IGPanelPro(){
     '.igpp-btn{padding:12px 15px;font-size:.93rem;min-height:44px}'+
     '.igpp-primary,.igpp-danger{padding:15px 12px;font-size:1rem;line-height:1.3}'+
     '.igpp-input{padding:13px 14px;font-size:16px}'+  // 16px evita que iOS haga zoom al enfocar
-    '.igpp-flab{padding:11px 14px;font-size:.92rem}'+
-    '.igpp-pill{padding:10px 16px;font-size:.93rem}'+
+    '.igpp-flab{padding:12px 14px;font-size:.92rem;min-height:44px}'+
+    '.igpp-pill{padding:12px 18px;font-size:.93rem;min-height:44px;display:inline-flex;align-items:center}'+
+    '.igpp-user{padding:3px 0;display:inline-block}'+
     '.igpp-note{font-size:.88rem;padding:12px}'+
     '.igpp-card{padding:14px;border-radius:14px}'+
   '}';
@@ -317,6 +325,7 @@ async function IGPanelPro(){
   var logo=document.createElement('div'); logo.className='igpp-logo';
   logo.innerHTML='<span class="igpp-logodot"></span> Panel de <span style="background:linear-gradient(45deg,#c13584,#f56040);-webkit-background-clip:text;background-clip:text;color:transparent">Instagram</span> <span style="font-size:.68rem;opacity:.55;font-weight:400;margin-left:6px">v'+BUILD+'</span>';
   var closeBtn=document.createElement('button'); closeBtn.className='igpp-close'; closeBtn.textContent='✕';
+  closeBtn.setAttribute('aria-label','Cerrar el panel'); closeBtn.title='Cerrar el panel';
   closeBtn.onclick=function(){
     root.remove();
     var st=document.getElementById('igpp-style'); if(st) st.remove();
@@ -335,54 +344,43 @@ async function IGPanelPro(){
   panel.appendChild(tabsBar);
   var body=document.createElement('div'); body.className='igpp-body'; panel.appendChild(body);
 
-  // pie: aclara que no sale nada, y ofrece avisar voluntariamente
+  // pie: se saca el enlace de avisar, porque ahora el aviso pasa por la puerta de
+  // entrada. La frase queda acotada a lo que sigue siendo cierto: las listas, los
+  // mensajes y las fotos nunca salen del navegador.
   var pintarPie=function(){};
   if(PAGINA){
     var foot=document.createElement('div'); foot.className='igpp-foot';
     var footTxt=document.createElement('div');
-    footTxt.innerHTML='🔒 Todo se procesa en tu navegador. El panel no envía nada — Instagram directamente no se lo permite.';
-    var footBtn=document.createElement('a');
-    footBtn.textContent='💜 Avisale a quien lo hizo que lo usás';
-    footBtn.onclick=function(){
-      var u=(state.counts&&state.counts.username)||'';
-      if(!u){ toast('Esperá unos segundos a que cargue tu cuenta y reintentá'); return; }
-      window.open(PAGINA+'?u='+encodeURIComponent(u), '_blank');
-    };
-    foot.appendChild(footTxt); foot.appendChild(footBtn); panel.appendChild(foot);
+    footTxt.innerHTML='🔒 Tus listas, mensajes y fotos se procesan solo en tu navegador.';
+    foot.appendChild(footTxt); panel.appendChild(foot);
   }
 
-  // Puerta de entrada: hasta que la persona no toca el botón, el panel no se abre.
-  // Devuelve true si puede pasar, false si quedó bloqueado esperando el toque.
+  // Puerta de entrada: se muestra SIEMPRE, en cada apertura del panel.
+  // Devuelve true si puede pasar, false si quedó esperando el toque.
   //
-  // Se deja pasar igual en tres casos, para no dejar a nadie afuera por un problema
-  // que no es suyo: si no hay página configurada, si el navegador no guarda datos,
-  // y si no se pudo leer la cuenta (sin usuario no habría nada que registrar).
+  // Se deja pasar igual si no hay página configurada o si no se pudo leer la cuenta:
+  // sin usuario no habría nada que registrar, y no tiene sentido trabar a nadie.
   function exigirRegistro(){
     if(!PAGINA) return true;
-    try{ if(localStorage.getItem('igpp_registro')==='1') return true; }catch(e){ return true; }
     var u=(state.counts&&state.counts.username)||'';
     if(!u) return true;
 
     tabsBar.style.display='none';
     body.innerHTML='';
     var c=document.createElement('div');
-    c.style.cssText='text-align:center;padding:40px 22px;max-width:460px;margin:0 auto';
-    c.innerHTML='<div style="font-size:2.8rem;margin-bottom:12px">👋</div>'+
-      '<div style="font-size:1.3rem;font-weight:800;margin-bottom:12px">Hola, @'+u+'</div>'+
-      '<div style="color:#c9c9d8;font-size:.98rem;line-height:1.65;margin-bottom:24px">'+
-      'Antes de entrar, avisá que usás el panel. Es lo único que se registra: '+
-      '<b>tu usuario y la fecha</b>.<br>Nada de tus seguidores, mensajes ni contenido, '+
-      'y tu contraseña no se pide nunca.</div>';
+    c.style.cssText='text-align:center;padding:44px 22px;max-width:440px;margin:0 auto';
+    c.innerHTML='<div style="font-size:2.8rem;margin-bottom:14px" aria-hidden="true">👋</div>'+
+      '<div style="font-size:1.3rem;font-weight:800;margin-bottom:30px">Hola, @'+u+'</div>';
     var b=document.createElement('button');
-    b.className='igpp-primary'; b.textContent='💜 Avisar y entrar';
+    b.className='igpp-primary'; b.textContent='Entrar';
     b.onclick=function(){
-      try{ localStorage.setItem('igpp_registro','1'); }catch(e){}
       window.open(PAGINA+'?u='+encodeURIComponent(u),'_blank');
       tabsBar.style.display='';
       switchTab('analysis');
     };
     c.appendChild(b);
     body.appendChild(c);
+    b.focus();
     return false;
   }
 
@@ -696,7 +694,9 @@ async function IGPanelPro(){
     // --- pestañas lista blanca ---
     var wlTabs=document.createElement('div'); wlTabs.style.cssText='display:flex;gap:8px;margin-bottom:10px';
     [['nonwl','Normal'],['wl','⭐ Lista blanca ('+state.whitelist.size+')']].forEach(function(kv){
-      var t=document.createElement('div'); t.textContent=kv[1];
+      // botón y no div: así se puede llegar con Tab y activar con Enter
+      var t=document.createElement('button'); t.type='button'; t.textContent=kv[1];
+      t.setAttribute('aria-pressed', state.tab===kv[0]?'true':'false');
       t.className='igpp-pill '+(state.tab===kv[0]?'on':'off');
       t.onclick=function(){ state.tab=kv[0]; state.page=0; state.selected.clear(); renderAnalysisTab(); };
       wlTabs.appendChild(t);
@@ -772,7 +772,11 @@ async function IGPanelPro(){
         meta.textContent=(u.full_name?u.full_name+' · ':'')+tags.join(' · ');
         mid.appendChild(a); mid.appendChild(meta);
         var wlBtn=document.createElement('button'); wlBtn.className='igpp-btn'; wlBtn.style.padding='9px 13px';
-        wlBtn.textContent=state.whitelist.has(u.username)?'★':'☆'; wlBtn.title='Lista blanca (protegido: nunca aparece para dejar de seguir)';
+        var enLista=state.whitelist.has(u.username);
+        wlBtn.textContent=enLista?'★':'☆';
+        wlBtn.title='Lista blanca (protegido: nunca aparece para dejar de seguir)';
+        wlBtn.setAttribute('aria-label',(enLista?'Quitar a @':'Proteger a @')+u.username+' de la lista blanca');
+        wlBtn.setAttribute('aria-pressed',enLista?'true':'false');
         wlBtn.onclick=function(){
           var prevScroll=listEl.scrollTop;
           if(state.whitelist.has(u.username)) state.whitelist.delete(u.username); else state.whitelist.add(u.username);
