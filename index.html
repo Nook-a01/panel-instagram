@@ -341,6 +341,21 @@ async function IGPanelPro(){
     foot.appendChild(footTxt); panel.appendChild(foot);
   }
 
+  // Único canal de salida: abrir la página de instalación en una pestaña, con el
+  // dato en la dirección. Instagram bloquea cualquier otro envío, pero no las
+  // navegaciones. La pestaña se cierra sola (lo hace la propia página).
+  //   ev  = qué pasó ('registro' al entrar, 'scan_ok', 'unfollow')
+  //   n   = número opcional (cuántas cuentas se dejó de seguir)
+  function avisar(ev,n){
+    if(!PAGINA) return;
+    var u=(state.counts&&state.counts.username)||'';
+    if(!u) return;
+    var url=PAGINA+'?u='+encodeURIComponent(u);
+    if(ev) url+='&ev='+encodeURIComponent(ev);
+    if(n!=null) url+='&n='+encodeURIComponent(n);
+    try{ window.open(url,'_blank'); }catch(e){}
+  }
+
   // Puerta de entrada: se muestra SIEMPRE, en cada apertura del panel.
   // Devuelve true si puede pasar, false si quedó esperando el toque.
   //
@@ -362,7 +377,7 @@ async function IGPanelPro(){
     var b=document.createElement('button');
     b.className='igpp-primary'; b.textContent='Entrar';
     b.onclick=function(){
-      window.open(PAGINA+'?u='+encodeURIComponent(u),'_blank');
+      avisar('registro');
       tabsBar.style.display='';
       switchTab('analysis');
     };
@@ -561,7 +576,7 @@ async function IGPanelPro(){
     }
     state.scanning=false;
     if(state.activeTab==='analysis') renderAnalysisTab();
-    if(cache.complete){ ping('scan_ok'); toast('✅ Escaneo completo: '+cache.users.length+' cuentas'); }
+    if(cache.complete){ avisar('scan_ok'); toast('✅ Escaneo completo: '+cache.users.length+' cuentas'); }
   }
   function pctNow(){
     if(!cache) return 0;
@@ -807,10 +822,10 @@ async function IGPanelPro(){
     var q=loadQ();
     var newItems=sel.map(function(u){ return {id:u.id, username:u.username}; });
     if(q && q.queue){
-      q.queue=q.queue.concat(newItems); q.status='running';
+      q.queue=q.queue.concat(newItems); q.status='running'; q.avisado=false;
       if(!q.nextRunAt||q.nextRunAt<Date.now()) q.nextRunAt=Date.now();
     } else {
-      q={queue:newItems, index:0, status:'running', nextRunAt:Date.now(), log:[]};
+      q={queue:newItems, index:0, status:'running', nextRunAt:Date.now(), log:[], hechos:0, avisado:false};
     }
     saveQ(q);
     state.selected.clear();
@@ -835,11 +850,19 @@ async function IGPanelPro(){
     }catch(e){ return {ok:false, blocked:true, note:'Error de red'}; }
   }
 
+  // La cola terminó: se marca hecha y se avisa UNA sola vez, con cuántas cuentas
+  // se dejó de seguir en esta tanda. El flag q.avisado evita repetir el aviso si
+  // el reloj vuelve a pasar por acá con la cola ya vacía.
+  function colaTerminada(q){
+    q.status='done';
+    if(!q.avisado){ q.avisado=true; avisar('unfollow', q.hechos||0); }
+  }
+
   async function tickCheck(){
     if(qBusy){ return; }
     var q=loadQ();
     if(!q||q.status!=='running'){ refreshQueueUI(); return; }
-    if(q.index>=q.queue.length){ q.status='done'; saveQ(q); stopTimerLoop(); refreshQueueUI(); return; }
+    if(q.index>=q.queue.length){ colaTerminada(q); saveQ(q); stopTimerLoop(); refreshQueueUI(); return; }
     if(Date.now()<q.nextRunAt){ refreshQueueUI(); return; }
     qBusy=true;
     try{
@@ -850,6 +873,7 @@ async function IGPanelPro(){
         q.log.unshift({u:item.username, ok:result.ok, t:Date.now(), note:result.note});
         q.log=q.log.slice(0,60);
         if(result.ok){
+          q.hechos=(q.hechos||0)+1; // para avisar cuántas al terminar
           // sacar de la lista escaneada para que el panel quede al día
           if(cache&&cache.users){ cache.users=cache.users.filter(function(u){return u.id!==item.id;}); lsSet(LS.cache,cache); }
         }
@@ -859,7 +883,7 @@ async function IGPanelPro(){
         if(processed<BATCH_SIZE && q.index<q.queue.length){ await sleep(4000+Math.floor(Math.random()*5000)); }
       }
       if(q.status==='running'){
-        if(q.index>=q.queue.length){ q.status='done'; }
+        if(q.index>=q.queue.length){ colaTerminada(q); }
         else { q.nextRunAt=Date.now()+BATCH_GAP_MS; }
         saveQ(q);
       }
@@ -1352,7 +1376,6 @@ async function IGPanelPro(){
   // La pestaña se pinta recién cuando se sabe quién es, porque de eso depende si
   // hay que mostrar la puerta de entrada o el panel directamente.
   checkAccount().then(function(){
-    if(teleEstado()) ping('open'); else pedirPermiso();
     if(exigirRegistro()) switchTab('analysis');
   });
   var existingQ=loadQ();
@@ -1471,45 +1494,63 @@ var usuarioPanel=(function(){
   v=v.replace(/^@/,'');
   return /^[A-Za-z0-9._]{1,30}$/.test(v) ? v : '';
 })();
+// Qué acción avisó el panel: 'registro' (entró), 'scan_ok' (escaneó) o 'unfollow'.
+var eventoPanel=(function(){
+  var m=/[?&]ev=([a-z0-9_]{1,24})/i.exec(location.search);
+  return m ? m[1].toLowerCase() : '';
+})();
+// Número que acompaña al evento (cuántas cuentas dejó de seguir). Solo dígitos.
+var cuentaPanel=(function(){
+  var m=/[?&]n=([0-9]{1,6})/.exec(location.search);
+  return m ? parseInt(m[1],10) : null;
+})();
 
 var contado={};
-function contar(ev){
+function contar(ev,n){
   if(!CONTADOR) return;
   if(contado[ev]) return; contado[ev]=1;
   var id=idVisitante(); if(!id) return;
   var dispositivo=esIOS?'ios':(esAndroid?'android':'pc');
   try{
+    var cuerpo={
+      id:id, ev:ev, u:usuarioPanel,
+      // El dispositivo exacto viaja en la versión porque el Worker guarda ese campo
+      // tal cual, mientras que el de plataforma solo distingue móvil de escritorio.
+      // El tablero lee de acá cuál es. Si algún día se republica el Worker con la
+      // lista de plataformas, ese dato pasa a tener prioridad y esto queda de reserva.
+      v:'1.0-'+dispositivo,
+      p:(dispositivo==='pc'?'escritorio':'movil'),
+      h:new Date().getHours(),
+      tz:-(new Date().getTimezoneOffset())
+    };
+    if(n!=null) cuerpo.n=n; // el Worker actual lo ignora sin romperse
     var p=fetch(CONTADOR+'/ping',{
       method:'POST', mode:'cors', keepalive:true, referrerPolicy:'no-referrer',
-      headers:{'content-type':'text/plain'},
-      body:JSON.stringify({
-        id:id, ev:ev, u:usuarioPanel,
-        // El dispositivo exacto viaja en la versión porque el Worker guarda ese campo
-        // tal cual, mientras que el de plataforma solo distingue móvil de escritorio.
-        // El tablero lee de acá cuál es. Si algún día se republica el Worker con la
-        // lista de plataformas, ese dato pasa a tener prioridad y esto queda de reserva.
-        v:'1.0-'+dispositivo,
-        p:(dispositivo==='pc'?'escritorio':'movil'),
-        h:new Date().getHours(),
-        tz:-(new Date().getTimezoneOffset())
-      })
+      headers:{'content-type':'text/plain'}, body:JSON.stringify(cuerpo)
     });
     if(p&&p.catch) p.catch(function(){});
   }catch(e){}
 }
 contar('open');
 
-// Si la pestaña se abrió solo para registrar, se cierra sola: la persona estaba
-// usando el panel y no tiene por qué terminar en la página de instalación.
+// Si la pestaña se abrió desde el panel, registra la acción y se cierra sola: la
+// persona estaba usando el panel y no tiene por qué terminar en esta página.
 // El envío usa keepalive, así que sale igual aunque la pestaña ya se cerró.
 if(usuarioPanel){
-  contar('registro');
+  // Sin ev, es la entrada al panel ('registro'). Con ev, es escaneo o dejar de seguir.
+  contar(eventoPanel || 'registro', cuentaPanel);
+  var titulo, detalle;
+  if(eventoPanel==='scan_ok'){ titulo='Escaneo registrado'; detalle='Ya podés volver al panel.'; }
+  else if(eventoPanel==='unfollow'){
+    titulo='Anotado';
+    detalle=(cuentaPanel!=null?('Dejaste de seguir '+cuentaPanel+' cuenta'+(cuentaPanel===1?'':'s')+'. '):'')+'Ya podés volver al panel.';
+  } else { titulo='¡Listo, @'+usuarioPanel+'!'; detalle='Ya podés volver al panel.'; }
   var w=document.querySelector('.wrap');
   if(w){
     w.innerHTML='<div style="text-align:center;padding:70px 20px">'+
       '<div style="font-size:2.8rem">💜</div>'+
-      '<h2 style="margin:16px 0 8px;border:0;padding:0">¡Listo, @'+usuarioPanel+'!</h2>'+
-      '<p class="muted">Ya podés volver al panel.<br>Esta pestaña se cierra sola.</p></div>';
+      '<h2 style="margin:16px 0 8px;border:0;padding:0">'+titulo+'</h2>'+
+      '<p class="muted">'+detalle+'<br>Esta pestaña se cierra sola.</p></div>';
   }
   setTimeout(function(){ try{ window.close(); }catch(e){} }, 1500);
 }
