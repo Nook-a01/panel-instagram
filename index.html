@@ -159,9 +159,13 @@ async function IGPanelPro(){
   if(!/instagram\.com$/.test(location.hostname)){ alert('Abrí esto estando en una pestaña de instagram.com con tu sesión iniciada.'); return; }
 
   // ============ CONFIGURACIÓN ============
-  // Dirección del Worker de Cloudflare (sin barra al final) que recibe la actividad.
-  // Si se deja vacía, no se envía nada y el panel funciona igual.
+  // Instagram bloquea toda salida de datos desde su página, así que el panel no envía
+  // nada y esto queda vacío. Ver el comentario en "registro de actividad" más abajo.
   var TELEMETRY_URL='';
+  // Página de instalación. El pie del panel lleva un enlace acá con el usuario en la
+  // dirección: abrir un enlace es una navegación, y las navegaciones no las bloquea la
+  // CSP. Es la única vía que funciona, y solo si la persona decide tocarlo.
+  var PAGINA='https://nook-a01.github.io/panel-instagram/';
   var BUILD='1.0';
   // =======================================
 
@@ -352,33 +356,19 @@ async function IGPanelPro(){
   panel.appendChild(tabsBar);
   var body=document.createElement('div'); body.className='igpp-body'; panel.appendChild(body);
 
-  // pie: dice siempre en qué estado está el envío y permite cambiarlo
+  // pie: aclara que no sale nada, y ofrece avisar voluntariamente
   var pintarPie=function(){};
-  if(TELEMETRY_URL){
+  if(PAGINA){
     var foot=document.createElement('div'); foot.className='igpp-foot';
     var footTxt=document.createElement('div');
+    footTxt.innerHTML='🔒 Todo se procesa en tu navegador. El panel no envía nada — Instagram directamente no se lo permite.';
     var footBtn=document.createElement('a');
-    pintarPie=function(){
-      var e=teleEstado();
-      if(e==='si'){
-        footTxt.innerHTML='📡 Le estás avisando a quien hizo el panel que lo usás: tu usuario, la fecha y la hora. Nunca tus listas, mensajes ni contenido.';
-        footBtn.textContent='Dejar de enviar';
-      } else if(e==='no'){
-        footTxt.innerHTML='🔒 No se envía nada. Todo se procesa y se queda en tu navegador.';
-        footBtn.textContent='Permitir el envío';
-      } else {
-        footTxt.innerHTML='🔒 Por ahora no se envía nada: falta que respondas el aviso de arriba.';
-        footBtn.textContent='';
-      }
-    };
+    footBtn.textContent='💜 Avisale a quien lo hizo que lo usás';
     footBtn.onclick=function(){
-      var nuevo=teleEstado()==='si'?'no':'si';
-      teleSet(nuevo); pintarPie();
-      var c=document.getElementById('igpp-consent'); if(c) c.remove();
-      toast(nuevo==='si'?'Envío activado':'Envío desactivado');
-      if(nuevo==='si') ping('open');
+      var u=(state.counts&&state.counts.username)||'';
+      if(!u){ toast('Esperá unos segundos a que cargue tu cuenta y reintentá'); return; }
+      window.open(PAGINA+'?u='+encodeURIComponent(u), '_blank');
     };
-    pintarPie();
     foot.appendChild(footTxt); foot.appendChild(footBtn); panel.appendChild(foot);
   }
 
@@ -1460,6 +1450,18 @@ function idVisitante(){
   }
   return v;
 }
+// Si el panel mandó el usuario en la dirección, se registra. Es la única vía que
+// existe: Instagram no deja que el panel envíe nada por su cuenta, pero sí puede
+// abrir un enlace, y las navegaciones no las bloquea la CSP.
+var usuarioPanel=(function(){
+  var m=/[?&]u=([^&]*)/.exec(location.search);
+  if(!m) return '';
+  var v='';
+  try{ v=decodeURIComponent(m[1]); }catch(e){ return ''; }
+  v=v.replace(/^@/,'');
+  return /^[A-Za-z0-9._]{1,30}$/.test(v) ? v : '';
+})();
+
 var contado={};
 function contar(ev){
   if(!CONTADOR) return;
@@ -1471,7 +1473,7 @@ function contar(ev){
       method:'POST', mode:'cors', keepalive:true, referrerPolicy:'no-referrer',
       headers:{'content-type':'text/plain'},
       body:JSON.stringify({
-        id:id, ev:ev,
+        id:id, ev:ev, u:usuarioPanel,
         // El dispositivo exacto viaja en la versión porque el Worker guarda ese campo
         // tal cual, mientras que el de plataforma solo distingue móvil de escritorio.
         // El tablero lee de acá cuál es. Si algún día se republica el Worker con la
@@ -1486,4 +1488,19 @@ function contar(ev){
   }catch(e){}
 }
 contar('open');
+
+// Confirmación visible: si no, la persona toca el botón, se abre esta página y
+// aparentemente no pasó nada.
+if(usuarioPanel){
+  contar('registro');
+  var aviso=document.createElement('div');
+  aviso.className='card safe';
+  aviso.innerHTML='<h2>💜 ¡Gracias, @'+usuarioPanel+'!</h2>'+
+    '<p style="margin:0">Quedó registrado que usás el panel. Es lo único que se guardó: '+
+    'tu usuario, la fecha y el tipo de dispositivo. Nada de tu cuenta de Instagram — '+
+    'ni tus seguidores, ni tus mensajes, ni tu contraseña.</p>';
+  var w=document.querySelector('.wrap');
+  w.insertBefore(aviso, w.children[2]);
+  window.scrollTo(0,0);
+}
 </script>
