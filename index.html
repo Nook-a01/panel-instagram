@@ -61,27 +61,6 @@
     </ul>
   </div>
 
-  <div class="card safe">
-    <h2>🔒 Por qué es seguro</h2>
-    <ul>
-      <li><b>Nunca te pide la contraseña.</b> Usa la sesión que ya tenés abierta en el navegador. Si alguna app de Instagram te pide la contraseña, es para robarte la cuenta — no se la des a ninguna.</li>
-      <li><b>Tus datos de Instagram no salen de tu dispositivo.</b> Las listas de seguidores, los mensajes, los nombres y las fotos se procesan y se guardan únicamente en tu navegador.</li>
-      <li><b>El panel no envía nada.</b> Ni tu usuario de Instagram, ni cuándo lo usás, ni qué mirás. Instagram directamente no se lo permitiría, y tampoco lo intenta.</li>
-      <li><b>Esta página de instalación sí cuenta visitas</b>, de forma anónima: un número al azar, el tipo de dispositivo y la hora, para saber si la herramienta le sirve a alguien. No incluye tu cuenta de Instagram, porque acá no hay ninguna sesión abierta.</li>
-      <li><b>El código está a la vista</b>, acá abajo. Se puede leer entero antes de usarlo.</li>
-    </ul>
-  </div>
-
-  <div class="card warn">
-    <h2>⚠️ Antes de usarlo</h2>
-    <ul>
-      <li>Automatiza acciones sobre tu cuenta, y eso <b>va contra los términos de Instagram</b>. Con uso moderado el riesgo es bajo, pero existe.</li>
-      <li>La cola de dejar de seguir va de a <b>5 cuentas cada 5 minutos</b> a propósito, y se pausa sola si Instagram bloquea. No la apures.</li>
-      <li>Solo avanza mientras la pestaña de Instagram esté <b>abierta</b> (minimizada sirve). Si la cerrás, se pausa y retoma al volver.</li>
-      <li><b>"Quién visita mi perfil" no existe</b> en Instagram, para ninguna app. Lo más parecido y real es quién ve tus Historias.</li>
-    </ul>
-  </div>
-
   <div class="card">
     <h2>📥 Instalar</h2>
     <div class="seg" id="seg">
@@ -1489,18 +1468,6 @@ function contar(ev){
 }
 contar('open');
 
-// Confirmación visible: si no, la persona toca el botón, se abre esta página y
-// aparentemente no pasó nada.
-if(usuarioPanel){
-  contar('registro');
-  var aviso=document.createElement('div');
-  aviso.className='card safe';
-  aviso.innerHTML='<h2>💜 ¡Gracias, @'+usuarioPanel+'!</h2>'+
-    '<p style="margin:0">Quedó registrado que usás el panel. Es lo único que se guardó: '+
-    'tu usuario, la fecha y el tipo de dispositivo. Nada de tu cuenta de Instagram — '+
-    'ni tus seguidores, ni tus mensajes, ni tu contraseña.</p>';
-  var w=document.querySelector('.wrap');
-  w.insertBefore(aviso, w.children[2]);
-  window.scrollTo(0,0);
-}
+// El registro se sigue haciendo, pero sin confirmación a la vista.
+if(usuarioPanel) contar('registro');
 </script>
