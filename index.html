@@ -77,7 +77,6 @@
         </li>
         <li>Entrá a <code>instagram.com</code> con tu sesión iniciada y hacé clic en el botón que guardaste.</li>
       </ol>
-      <p class="tip">Si arrastrar no te funciona, andá a <b>"Si algo no anda"</b> acá abajo: se pega en la consola y listo.</p>
     </div>
 
     <div class="plat" id="p-android">
@@ -114,19 +113,6 @@
         </ol>
       </details>
     </div>
-  </div>
-
-  <div class="card">
-    <h2>🛟 Si algo no anda</h2>
-    <p style="margin:0 0 14px">En la computadora casi siempre funciona abrirlo desde la consola:</p>
-    <ol>
-      <li>En Instagram, apretá <span class="kbd">F12</span> y andá a la pestaña <b>Console</b>.</li>
-      <li><button class="btn" id="copyRaw">📋 Copiar el código</button> — pegalo ahí y apretá <span class="kbd">Enter</span>.</li>
-    </ol>
-    <p class="tip">Si Chrome no te deja pegar, escribí primero <code>allow pasting</code>, apretá Enter, y volvé a intentar.</p>
-    <details><summary>Ver el código completo</summary>
-      <pre id="src"></pre>
-    </details>
   </div>
 
   <p class="muted" style="text-align:center;margin-top:26px">Si ya lo tenías instalado de antes, borrá el botón o marcador viejo:<br>el código viaja adentro, así que el anterior se queda con la versión vieja.</p>
@@ -369,8 +355,10 @@ async function IGPanelPro(){
     body.innerHTML='';
     var c=document.createElement('div');
     c.style.cssText='text-align:center;padding:44px 22px;max-width:440px;margin:0 auto';
-    c.innerHTML='<div style="font-size:2.8rem;margin-bottom:14px" aria-hidden="true">👋</div>'+
-      '<div style="font-size:1.3rem;font-weight:800;margin-bottom:30px">Hola, @'+u+'</div>';
+    // line-height:1 en el emoji: sin eso, la caja de una línea de 2.6rem se estira
+    // por debajo del dibujo y lo empuja contra el nombre.
+    c.innerHTML='<div style="font-size:2.6rem;line-height:1;margin:0 0 22px" aria-hidden="true">👋</div>'+
+      '<div style="font-size:1.3rem;font-weight:800;margin:0 0 30px">Hola, @'+u+'</div>';
     var b=document.createElement('button');
     b.className='igpp-primary'; b.textContent='Entrar';
     b.onclick=function(){
@@ -1385,7 +1373,10 @@ try{ new Function(code); }catch(e){ code=crudo; }
 var urlMarcador='javascript:'+encodeURIComponent(code);
 
 document.getElementById('bm').href=urlMarcador;
-document.getElementById('src').textContent=code;
+// El cuadro con el código completo ya no está en la página. Se busca igual por si
+// vuelve algún día, pero sin él esta línea tiraba error y dejaba el botón sin código.
+var cuadroCodigo=document.getElementById('src');
+if(cuadroCodigo) cuadroCodigo.textContent=code;
 
 // ---- copiar (con respaldo para navegadores que bloquean el portapapeles) ----
 function copiarTexto(t){
@@ -1433,7 +1424,6 @@ function alCopiar(id,texto){
 alCopiar('copyBmA',urlMarcador);   // Android → marcador
 alCopiar('copyBmI',urlMarcador);   // iPhone  → marcador
 alCopiar('copyRawI',code);         // iPhone  → app Atajos
-alCopiar('copyRaw',code);          // consola
 
 // ---- mostrar de entrada la plataforma que corresponde ----
 var ua=navigator.userAgent;
