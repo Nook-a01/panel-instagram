@@ -1465,13 +1465,19 @@ function contar(ev){
   if(!CONTADOR) return;
   if(contado[ev]) return; contado[ev]=1;
   var id=idVisitante(); if(!id) return;
+  var dispositivo=esIOS?'ios':(esAndroid?'android':'pc');
   try{
     var p=fetch(CONTADOR+'/ping',{
       method:'POST', mode:'cors', keepalive:true, referrerPolicy:'no-referrer',
       headers:{'content-type':'text/plain'},
       body:JSON.stringify({
-        id:id, ev:ev, v:'1.0',
-        p:(esIOS?'ios':(esAndroid?'android':'pc')),
+        id:id, ev:ev,
+        // El dispositivo exacto viaja en la versión porque el Worker guarda ese campo
+        // tal cual, mientras que el de plataforma solo distingue móvil de escritorio.
+        // El tablero lee de acá cuál es. Si algún día se republica el Worker con la
+        // lista de plataformas, ese dato pasa a tener prioridad y esto queda de reserva.
+        v:'1.0-'+dispositivo,
+        p:(dispositivo==='pc'?'escritorio':'movil'),
         h:new Date().getHours(),
         tz:-(new Date().getTimezoneOffset())
       })
