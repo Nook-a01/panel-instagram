@@ -177,7 +177,9 @@ async function IGPanelPro(){
 
   // ---------------- almacenamiento ----------------
   var LS={ cache:'igpp_cache_'+uid, wl:'igpp_wl_'+uid, q:'igpp_q_'+uid, sv:'igpp_sv_'+uid, counts:'igpp_counts_'+uid, hist:'igpp_hist_'+uid, week:'igpp_week_'+uid, svlog:'igpp_svlog_'+uid,
-    pendScan:'igpp_pscan_'+uid, pendUnf:'igpp_punf_'+uid };
+    pendScan:'igpp_pscan_'+uid, pendUnf:'igpp_punf_'+uid,
+    flwrs:'igpp_flwrs_'+uid,   // última foto de tu lista de seguidores {users:[], ts}
+    lost:'igpp_lost_'+uid };   // historial de quién te dejó de seguir [{u, ts}]
   function lsGet(k,fb){ try{ var v=JSON.parse(localStorage.getItem(k)); return v===null||v===undefined?fb:v; }catch(e){ return fb; } }
   function lsSet(k,v){ try{ if(v===null) localStorage.removeItem(k); else localStorage.setItem(k,JSON.stringify(v)); }catch(e){} }
   function loadWL(){ return new Set(lsGet(LS.wl,[])); }
@@ -351,7 +353,7 @@ async function IGPanelPro(){
   head.appendChild(logo); head.appendChild(closeBtn); panel.appendChild(head);
 
   var tabsBar=document.createElement('div'); tabsBar.className='igpp-tabs';
-  var tabDefs=[['analysis','👥 Seguidores'],['dms','💬 Sin respuesta'],['stories','👁️ Historias'],['stats','📈 Estadísticas'],['strategy','🎯 Estrategia']];
+  var tabDefs=[['analysis','👥 Seguidores'],['lost','💔 Te dejaron'],['dms','💬 Sin respuesta'],['stories','👁️ Historias'],['stats','📈 Estadísticas'],['strategy','🎯 Estrategia']];
   var tabBtns={};
   tabDefs.forEach(function(td){
     var b=document.createElement('button'); b.className='igpp-tab'; b.textContent=td[1];
@@ -494,6 +496,7 @@ async function IGPanelPro(){
   }
   function renderActiveTab(){
     if(state.activeTab==='analysis') renderAnalysisTab();
+    else if(state.activeTab==='lost') renderLostTab();
     else if(state.activeTab==='dms') renderDmsTab();
     else if(state.activeTab==='stories') renderStoriesTab();
     else if(state.activeTab==='strategy') renderStrategyTab();
@@ -1289,6 +1292,171 @@ async function IGPanelPro(){
   }
 
   // ---------------- PESTAÑA ESTADÍSTICAS ----------------
+  // ---------------- PESTAÑA "TE DEJARON DE SEGUIR" ----------------
+  // Instagram no avisa quién te deja de seguir ni cuándo. La única forma real es
+  // guardar tu lista de seguidores y compararla entre escaneos: quien estaba antes
+  // y ya no está, te dejó de seguir. La fecha/hora es la de DETECCIÓN (cuando
+  // escaneaste), no el momento exacto — eso no existe para ninguna app.
+  var lostState={ scanning:false, abort:false, status:'', pct:0, err:'' };
+
+  function setLostStatus(txt,pct){
+    lostState.status=txt; lostState.pct=pct;
+    var s=document.getElementById('igpp-lost-status'); if(s) s.textContent=txt;
+    var b=document.getElementById('igpp-lost-bar'); if(b) b.style.width=pct+'%';
+    var p=document.getElementById('igpp-lost-pct'); if(p) p.textContent=pct+'%';
+  }
+  function fechaHoraLocal(ms){
+    var d=new Date(ms);
+    return ('0'+d.getDate()).slice(-2)+'/'+('0'+(d.getMonth()+1)).slice(-2)+' '+
+           ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);
+  }
+
+  // Recorre TODA tu lista de seguidores. Devuelve {complete, users:[usernames]}.
+  // Solo si complete=true se puede comparar; un recorrido a medias daría falsos
+  // positivos (marcaría como "te dejó de seguir" a quien no llegamos a leer).
+  async function scanFollowers(){
+    var out=[], vistos={}, cursor='', backoffs=[8000,15000,30000,60000,120000], fail=0, pageN=0;
+    var total=(state.counts&&state.counts.followers)||0;
+    while(true){
+      if(lostState.abort) return {complete:false, users:out};
+      var r=null;
+      try{ r=await apiPage('followers',cursor); }
+      catch(err){
+        if(err && err.kind==='http' && (err.status===401||err.status===403)){
+          lostState.err='Tu sesión de Instagram venció o se cerró. Volvé a iniciar sesión en instagram.com y reintentá.';
+          return {complete:false, users:out};
+        }
+        fail++;
+        if(fail>backoffs.length){
+          lostState.err='Instagram no respondió tras varios intentos. No se pudo completar la lista, así que no se comparó (para no marcar a nadie por error). Reintentá más tarde.';
+          return {complete:false, users:out};
+        }
+        var motivo=(err&&err.kind==='limit')?'Instagram limitó las peticiones':'Instagram no respondió';
+        var wait=backoffs[fail-1];
+        for(var w=wait; w>0 && !lostState.abort; w-=1000){
+          setLostStatus('⏳ '+motivo+'. Reintento '+fail+'/'+backoffs.length+' en '+fmt(w)+'…', lostState.pct);
+          await sleep(1000);
+        }
+        continue;
+      }
+      fail=0;
+      r.users.forEach(function(u){ var un=(u.username||'').toLowerCase(); if(un&&!vistos[un]){ vistos[un]=1; out.push(un); } });
+      cursor=r.next;
+      pageN++;
+      var pct=total?Math.min(99,Math.floor(out.length/total*100)):0;
+      setLostStatus('Leyendo tus seguidores… '+out.length+(total?(' de '+total):''), pct);
+      if(!cursor) return {complete:true, users:out};
+      await sleep(1000+Math.floor(Math.random()*700));
+      if(pageN%8===0){ setLostStatus('😴 Pausa breve de seguridad…',pct); await sleep(6000); }
+      if(pageN%30===0){ setLostStatus('😴 Pausa larga para no llamar la atención de Instagram…',pct); await sleep(20000); }
+    }
+  }
+
+  async function runLostScan(){
+    if(lostState.scanning) return;
+    lostState.scanning=true; lostState.abort=false; lostState.err='';
+    renderLostTab();
+    var res=await scanFollowers();
+    lostState.scanning=false;
+    if(res.complete){
+      var prev=lsGet(LS.flwrs,null);
+      var ahoraSet={}; res.users.forEach(function(u){ ahoraSet[u]=1; });
+      var primeraVez=!(prev && Array.isArray(prev.users));
+      if(!primeraVez){
+        var perdidos=prev.users.filter(function(u){ return !ahoraSet[u]; });
+        if(perdidos.length){
+          var hist=lsGet(LS.lost,[]); var ts=Date.now();
+          perdidos.forEach(function(u){ hist.push({u:u, ts:ts}); });
+          var corte=ts-30*86400000;               // conservar 30 días
+          hist=hist.filter(function(x){ return x.ts>=corte; });
+          lsSet(LS.lost,hist);
+        }
+      }
+      lsSet(LS.flwrs,{users:res.users, ts:Date.now()});
+      if(primeraVez) toast('✅ Guardé tu lista base ('+res.users.length+' seguidores). La próxima vez te muestro quién se fue.');
+      else toast('✅ Comparación lista');
+    }
+    renderLostTab();
+  }
+
+  function renderLostTab(){
+    body.innerHTML=''; body.appendChild(bannerEl());
+    var snap=lsGet(LS.flwrs,null);
+    var hist=lsGet(LS.lost,[]);
+    // por las dudas, podar a 30 días también al mostrar
+    var corte=Date.now()-30*86400000;
+    hist=hist.filter(function(x){ return x.ts>=corte; }).sort(function(a,b){ return b.ts-a.ts; });
+
+    // --- tarjeta de escaneo ---
+    var card=document.createElement('div'); card.className='igpp-card'; card.style.marginBottom='14px';
+    if(lostState.scanning){
+      card.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center"><b>🔎 Revisando tus seguidores…</b><span id="igpp-lost-pct" class="igpp-badge">'+lostState.pct+'%</span></div>'+
+        '<div class="igpp-progresswrap"><div id="igpp-lost-bar" class="igpp-progress" style="width:'+lostState.pct+'%"></div></div>'+
+        '<div id="igpp-lost-status" style="color:#9a9ab0;font-size:.92rem">'+(lostState.status||'Comenzando…')+'</div>';
+      var stop=document.createElement('button'); stop.className='igpp-btn'; stop.style.marginTop='10px'; stop.textContent='⏸ Pausar';
+      stop.onclick=function(){ lostState.abort=true; };
+      card.appendChild(stop);
+    } else {
+      var info=snap? ('Última revisión: '+timeAgo(snap.ts)+' · '+((snap.users&&snap.users.length)||0)+' seguidores guardados.')
+                   : 'Todavía no revisaste tu lista de seguidores.';
+      card.innerHTML='<div style="color:#c9c9d8;margin-bottom:12px">'+info+'</div>'+
+        (lostState.err?('<div style="color:#ffb020;font-size:.9rem;margin-bottom:10px">'+lostState.err+'</div>'):'');
+      var b=document.createElement('button'); b.className='igpp-primary'; b.style.maxWidth='340px';
+      b.textContent=snap?'🔄 Revisar de nuevo':'Revisar mis seguidores ahora';
+      b.onclick=function(){ runLostScan(); };
+      card.appendChild(b);
+    }
+    body.appendChild(card);
+
+    // --- explicación honesta ---
+    var nota=document.createElement('div'); nota.className='igpp-note';
+    nota.innerHTML='La fecha y hora es <b>cuándo lo detectamos</b> (cuando revisaste), no el minuto exacto en que la persona te dejó de seguir — eso Instagram no lo da. Cuanto más seguido revises, más precisa es. Revisá cada 1–2 días para un buen historial.';
+    body.appendChild(nota);
+
+    if(!snap){ return; }
+
+    // --- historial ---
+    var titulo=document.createElement('div'); titulo.style.cssText='font-weight:800;font-size:1.05rem;margin:16px 0 4px';
+    titulo.textContent='Te dejaron de seguir — últimos 30 días';
+    body.appendChild(titulo);
+
+    if(!hist.length){
+      var vacio=document.createElement('div'); vacio.style.cssText='text-align:center;color:#8f8fa3;padding:22px';
+      vacio.textContent=snap.users?'Nadie te dejó de seguir desde la última revisión. 🎉':'Revisá de nuevo en unos días para empezar a ver el historial.';
+      body.appendChild(vacio); return;
+    }
+
+    // agrupar por momento de detección
+    var grupos=[], gmap={};
+    hist.forEach(function(x){
+      var k=String(x.ts);
+      if(!gmap[k]){ gmap[k]={ts:x.ts, items:[]}; gmap[k]._i=grupos.push(gmap[k])-1; }
+      gmap[k].items.push(x.u);
+    });
+    var totalPerdidos=hist.length;
+    var resumen=document.createElement('div'); resumen.style.cssText='color:#8f8fa3;font-size:.9rem;margin-bottom:10px';
+    resumen.textContent=totalPerdidos+' cuenta'+(totalPerdidos>1?'s':'')+' en total.';
+    body.appendChild(resumen);
+
+    var lista=document.createElement('div'); lista.className='igpp-scrolllist'; body.appendChild(lista);
+    grupos.forEach(function(g){
+      var cab=document.createElement('div'); cab.style.cssText='color:#c4ceff;font-size:.82rem;font-weight:700;margin:8px 2px 2px';
+      cab.textContent='Detectado el '+fechaHoraLocal(g.ts);
+      lista.appendChild(cab);
+      g.items.forEach(function(un){
+        var row=document.createElement('div'); row.className='igpp-row';
+        var av=document.createElement('div'); av.className='igpp-avfb'; av.textContent=(un[0]||'?').toUpperCase();
+        var mid=document.createElement('div'); mid.style.cssText='flex:1;min-width:0';
+        var a=document.createElement('a'); a.className='igpp-user'; a.textContent='@'+un;
+        a.href='https://www.instagram.com/'+un; a.target='_blank';
+        var meta=document.createElement('small'); meta.className='igpp-meta'; meta.textContent='dejó de seguirte';
+        mid.appendChild(a); mid.appendChild(meta);
+        row.appendChild(av); row.appendChild(mid);
+        lista.appendChild(row);
+      });
+    });
+  }
+
   function renderStatsTab(){
     body.innerHTML=''; body.appendChild(bannerEl());
     var haveScan=users().length>0;
