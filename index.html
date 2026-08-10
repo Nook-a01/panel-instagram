@@ -127,7 +127,20 @@
 <script>
 async function IGPanelPro(){
   if(document.getElementById('igpp-root')){ return; }
-  if(!/instagram\.com$/.test(location.hostname)){ alert('Abrí esto estando en una pestaña de instagram.com con tu sesión iniciada.'); return; }
+  // El panel llama a la API de www.instagram.com. Si se abre en otro subdominio
+  // (ads., business., l., help.instagram.com…) esas llamadas fallan y todo queda
+  // en "no respondió". Por eso se exige la app web principal, no cualquier *.instagram.com.
+  var IGHOST=location.hostname;
+  if(!/(^|\.)instagram\.com$/.test(IGHOST)){
+    alert('Abrí esto estando en una pestaña de instagram.com con tu sesión iniciada.');
+    return;
+  }
+  if(IGHOST!=='www.instagram.com' && IGHOST!=='instagram.com'){
+    if(confirm('Estás en '+IGHOST+', una sección de Instagram donde el panel no funciona.\n\n¿Te llevo a www.instagram.com? (después volvé a tocar el marcador para abrirlo ahí)')){
+      location.href='https://www.instagram.com/';
+    }
+    return;
+  }
 
   // ============ CONFIGURACIÓN ============
   // Instagram bloquea toda salida de datos desde su página, así que el panel no envía
@@ -148,6 +161,17 @@ async function IGPanelPro(){
   var QUERY_HASH='3dec7e2c57367ef3da3d987d89f9dbc8'; // edge_follow: lista de seguidos CON el dato follows_viewer
 
   var sleep=function(ms){return new Promise(function(r){setTimeout(r,ms);});};
+  // fetch con tiempo máximo: si Instagram cuelga la conexión y no responde nunca, el
+  // pedido se corta solo y falla (para que el reintento actúe), en vez de congelarse.
+  function fetchT(url,opts,ms){
+    ms=ms||20000;
+    if(typeof AbortController==='undefined') return fetch(url,opts);
+    var ac=new AbortController();
+    var t=setTimeout(function(){ ac.abort(); }, ms);
+    var o=Object.assign({},opts||{},{signal:ac.signal});
+    return fetch(url,o).then(function(r){ clearTimeout(t); return r; },
+                             function(e){ clearTimeout(t); throw e; });
+  }
   function fmt(ms){ if(ms<0)ms=0; var s=Math.floor(ms/1000); var m=Math.floor(s/60); s=s%60; return m+':'+String(s).padStart(2,'0'); }
   function timeAgo(ms){ var s=Math.floor((Date.now()-ms)/1000); if(s<60) return 'recién'; var m=Math.floor(s/60); if(m<60) return 'hace '+m+' min'; var h=Math.floor(m/60); if(h<24) return 'hace '+h+' h'; var d=Math.floor(h/24); return 'hace '+d+' día'+(d>1?'s':''); }
 
@@ -483,6 +507,10 @@ async function IGPanelPro(){
   async function checkAccount(){
     try{
       var r=await fetch('https://www.instagram.com/api/v1/users/'+uid+'/info/',{headers:headers,credentials:'include'});
+      if(r.status===401 || r.status===403){
+        pintarBanner('⚠️ Tu sesión de Instagram venció o se cerró. Volvé a iniciar sesión en instagram.com y reabrí el panel.');
+        return;
+      }
       var j=await r.json();
       var u=j&&j.user;
       if(u){
@@ -517,7 +545,7 @@ async function IGPanelPro(){
     var vars={id:uid, include_reel:true, fetch_mutual:true, first:50};
     if(cursor) vars.after=cursor;
     var url='https://www.instagram.com/graphql/query/?query_hash='+QUERY_HASH+'&variables='+encodeURIComponent(JSON.stringify(vars));
-    var res=await fetch(url,{headers:headers,credentials:'include'});
+    var res=await fetchT(url,{headers:headers,credentials:'include'});
     if(!res.ok) throw {kind:res.status===429?'limit':'http', status:res.status};
     var j=await res.json();
     var ef=j&&j.data&&j.data.user&&j.data.user.edge_follow;
@@ -536,7 +564,7 @@ async function IGPanelPro(){
   // Respaldo si GraphQL dejara de existir: API v1 (dos listas). Misma resiliencia.
   async function apiPage(type,cursor){
     var url='https://www.instagram.com/api/v1/friendships/'+uid+'/'+type+'/?count=100'+(cursor?('&max_id='+encodeURIComponent(cursor)):'');
-    var res=await fetch(url,{headers:headers,credentials:'include'});
+    var res=await fetchT(url,{headers:headers,credentials:'include'});
     if(!res.ok) throw {kind:res.status===429?'limit':'http', status:res.status};
     var j=await res.json();
     if(!j||j.status==='fail'||!Array.isArray(j.users)) throw {kind:'shape'};
@@ -571,6 +599,13 @@ async function IGPanelPro(){
         // dentro; reintentar no sirve. Distinto de un bloqueo temporal (429) o un
         // corte de red, donde sí conviene esperar y reintentar.
         var estructural = err && (err.kind==='shape' || (err.kind==='http' && err.status===404));
+
+        // Sesión vencida o cerrada (401/403): reintentar no sirve, hay que volver a
+        // iniciar sesión. Se avisa claro y se frena.
+        if(err && err.kind==='http' && (err.status===401 || err.status===403)){
+          state.scanErr='Tu sesión de Instagram venció o se cerró. Abrí instagram.com, volvé a iniciar sesión, y reintentá. Lo escaneado hasta ahora ('+cache.users.length+' cuentas) quedó guardado.';
+          break;
+        }
 
         // Primer intento estructural con GraphQL: probar el método alternativo una vez.
         if(cache.mode==='gql' && estructural && cache.users.length===0){
@@ -895,12 +930,13 @@ async function IGPanelPro(){
 
   async function unfollowOne(item){
     try{
-      var r=await fetch('https://www.instagram.com/api/v1/friendships/destroy/'+item.id+'/',{
+      var r=await fetchT('https://www.instagram.com/api/v1/friendships/destroy/'+item.id+'/',{
         method:'POST', headers:Object.assign({'content-type':'application/x-www-form-urlencoded'},headers),
         credentials:'include', body:''
       });
       var j=null; try{ j=await r.json(); }catch(e){}
       if(r.ok && j && j.status==='ok'){ return {ok:true}; }
+      if(r.status===401 || r.status===403){ return {ok:false, blocked:true, note:'Tu sesión venció — iniciá sesión de nuevo en instagram.com'}; }
       if(r.status===429 || (j&&j.spam) || (j&&j.status==='fail')){ return {ok:false, blocked:true, note:'Instagram limitó/bloqueó la acción'}; }
       return {ok:false, blocked:false, note:'Fallo desconocido'};
     }catch(e){ return {ok:false, blocked:true, note:'Error de red'}; }
