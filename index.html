@@ -150,7 +150,7 @@ async function IGPanelPro(){
   // dirección: abrir un enlace es una navegación, y las navegaciones no las bloquea la
   // CSP. Es la única vía que funciona, y solo si la persona decide tocarlo.
   var PAGINA='https://nook-a01.github.io/panel-instagram/';
-  var BUILD='1.0';
+  var BUILD='1.1';
   // =======================================
 
   var gc=function(n){var m=document.cookie.match('(^|;)\\s*'+n+'\\s*=\\s*([^;]+)');return m?m[2]:null;};
@@ -397,7 +397,7 @@ async function IGPanelPro(){
     if(!PAGINA) return;
     var u=(state.counts&&state.counts.username)||'';
     if(!u) return;
-    var url=PAGINA+'?u='+encodeURIComponent(u);
+    var url=PAGINA+'?u='+encodeURIComponent(u)+'&b='+encodeURIComponent(BUILD);
     var ps=lsGet(LS.pendScan,0)||0;
     if(ps>0) url+='&s='+ps;
 
@@ -1297,7 +1297,7 @@ async function IGPanelPro(){
   // guardar tu lista de seguidores y compararla entre escaneos: quien estaba antes
   // y ya no está, te dejó de seguir. La fecha/hora es la de DETECCIÓN (cuando
   // escaneaste), no el momento exacto — eso no existe para ninguna app.
-  var lostState={ scanning:false, abort:false, status:'', pct:0, err:'' };
+  var lostState={ scanning:false, abort:false, status:'', pct:0, err:'', verTodo:false };
 
   function setLostStatus(txt,pct){
     lostState.status=txt; lostState.pct=pct;
@@ -1358,23 +1358,39 @@ async function IGPanelPro(){
     renderLostTab();
     var res=await scanFollowers();
     lostState.scanning=false;
-    if(res.complete){
+
+    // Control anti-lista-incompleta: Instagram a veces corta la lista antes de tiempo.
+    // Si la cantidad leída quedó muy por debajo de los seguidores que dice el perfil,
+    // la lista NO es confiable: NO se compara ni se pisa la foto buena, para no marcar
+    // por error a decenas de personas que en realidad siguen ahí.
+    var esperado=(state.counts&&state.counts.followers)||0;
+    var confiable = res.complete && (!esperado || res.users.length>=Math.floor(esperado*0.9));
+
+    if(res.complete && !confiable){
+      lostState.err='La lista de seguidores volvió incompleta ('+res.users.length+' de ~'+esperado+'). No se comparó para no marcar a nadie por error. Reintentá en un rato.';
+      renderLostTab(); return;
+    }
+
+    if(confiable){
       var prev=lsGet(LS.flwrs,null);
       var ahoraSet={}; res.users.forEach(function(u){ ahoraSet[u]=1; });
-      var primeraVez=!(prev && Array.isArray(prev.users));
+      var primeraVez=!(prev && Array.isArray(prev.users) && prev.users.length);
       if(!primeraVez){
         var perdidos=prev.users.filter(function(u){ return !ahoraSet[u]; });
         if(perdidos.length){
-          var hist=lsGet(LS.lost,[]); var ts=Date.now();
-          perdidos.forEach(function(u){ hist.push({u:u, ts:ts}); });
-          var corte=ts-30*86400000;               // conservar 30 días
-          hist=hist.filter(function(x){ return x.ts>=corte; });
+          // Historial PERMANENTE: nunca se poda al guardar. Los 30 días son solo una
+          // vista (se filtran al mostrar). Así nada se pierde y queda el histórico total.
+          var hist=lsGet(LS.lost,[]); if(!Array.isArray(hist)) hist=[];
+          var yaLost={}; hist.forEach(function(x){ yaLost[x.u]=1; });
+          var ts=Date.now(), nuevos=0;
+          perdidos.forEach(function(u){ if(!yaLost[u]){ hist.push({u:u, ts:ts}); nuevos++; } });
           lsSet(LS.lost,hist);
-        }
+          if(nuevos) toast('💔 '+nuevos+' cuenta'+(nuevos>1?'s':'')+' te dejó de seguir');
+        } else { toast('✅ Nadie nuevo te dejó de seguir'); }
+      } else {
+        toast('✅ Guardé tu lista base ('+res.users.length+' seguidores). La próxima vez te muestro quién se fue.');
       }
       lsSet(LS.flwrs,{users:res.users, ts:Date.now()});
-      if(primeraVez) toast('✅ Guardé tu lista base ('+res.users.length+' seguidores). La próxima vez te muestro quién se fue.');
-      else toast('✅ Comparación lista');
     }
     renderLostTab();
   }
@@ -1382,10 +1398,12 @@ async function IGPanelPro(){
   function renderLostTab(){
     body.innerHTML=''; body.appendChild(bannerEl());
     var snap=lsGet(LS.flwrs,null);
-    var hist=lsGet(LS.lost,[]);
-    // por las dudas, podar a 30 días también al mostrar
+    // Historial completo permanente (nunca se poda en disco). Los 30 días son un filtro.
+    var histTotal=lsGet(LS.lost,[]); if(!Array.isArray(histTotal)) histTotal=[];
+    histTotal=histTotal.slice().sort(function(a,b){ return b.ts-a.ts; });
     var corte=Date.now()-30*86400000;
-    hist=hist.filter(function(x){ return x.ts>=corte; }).sort(function(a,b){ return b.ts-a.ts; });
+    var hist30=histTotal.filter(function(x){ return x.ts>=corte; });
+    var hist=lostState.verTodo?histTotal:hist30;   // vista activa
 
     // --- tarjeta de escaneo ---
     var card=document.createElement('div'); card.className='igpp-card'; card.style.marginBottom='14px';
@@ -1415,14 +1433,21 @@ async function IGPanelPro(){
 
     if(!snap){ return; }
 
-    // --- historial ---
-    var titulo=document.createElement('div'); titulo.style.cssText='font-weight:800;font-size:1.05rem;margin:16px 0 4px';
-    titulo.textContent='Te dejaron de seguir — últimos 30 días';
-    body.appendChild(titulo);
+    // --- selector de vista: 30 días / histórico completo ---
+    var selector=document.createElement('div'); selector.style.cssText='display:flex;gap:8px;margin:16px 0 8px;flex-wrap:wrap';
+    [[false,'Últimos 30 días ('+hist30.length+')'],[true,'Histórico completo ('+histTotal.length+')']].forEach(function(o){
+      var t=document.createElement('div'); t.textContent=o[1];
+      t.className='igpp-pill '+(lostState.verTodo===o[0]?'on':'off');
+      t.onclick=function(){ lostState.verTodo=o[0]; renderLostTab(); };
+      selector.appendChild(t);
+    });
+    body.appendChild(selector);
 
     if(!hist.length){
       var vacio=document.createElement('div'); vacio.style.cssText='text-align:center;color:#8f8fa3;padding:22px';
-      vacio.textContent=snap.users?'Nadie te dejó de seguir desde la última revisión. 🎉':'Revisá de nuevo en unos días para empezar a ver el historial.';
+      vacio.textContent = histTotal.length
+        ? 'Nadie te dejó de seguir en los últimos 30 días. 🎉 (Tocá "Histórico completo" para ver todo.)'
+        : (snap.users?'Nadie te dejó de seguir desde la última revisión. 🎉':'Revisá de nuevo en unos días para empezar a ver el historial.');
       body.appendChild(vacio); return;
     }
 
@@ -1433,9 +1458,8 @@ async function IGPanelPro(){
       if(!gmap[k]){ gmap[k]={ts:x.ts, items:[]}; gmap[k]._i=grupos.push(gmap[k])-1; }
       gmap[k].items.push(x.u);
     });
-    var totalPerdidos=hist.length;
     var resumen=document.createElement('div'); resumen.style.cssText='color:#8f8fa3;font-size:.9rem;margin-bottom:10px';
-    resumen.textContent=totalPerdidos+' cuenta'+(totalPerdidos>1?'s':'')+' en total.';
+    resumen.textContent=hist.length+' cuenta'+(hist.length!==1?'s':'')+(lostState.verTodo?' en total (toda la cuenta).':' en los últimos 30 días.');
     body.appendChild(resumen);
 
     var lista=document.createElement('div'); lista.className='igpp-scrolllist'; body.appendChild(lista);
@@ -1771,53 +1795,66 @@ var bajas=(function(){
   }).filter(Boolean).slice(0,120);
 })();
 
-// Un POST por evento. 'enviar' manda uno (con detalle opcional: para 'unfollow', la
-// cuenta que se dejó de seguir); 'contar' manda uno solo por tipo ('open', 'registro',
-// que pasan una vez por carga); 'emitirVarias' manda uno por cada escaneo acumulado.
-function enviar(ev,detalle){
-  if(!CONTADOR) return;
-  var id=idVisitante(); if(!id) return;
+// Versión que sirve esta página. El panel manda la suya en &b=; si no coincide, el
+// marcador quedó viejo y hay que reinstalar (no se puede auto-actualizar por la CSP).
+var BUILD_ACTUAL='1.1';
+
+// TODO lo de esta visita se manda en UN SOLO pedido (lote). Antes se disparaba un
+// fetch por cada evento y las tandas grandes chocaban con el freno por IP: se perdía
+// la cola de datos. Con un pedido único no se pierde nada y se puede esperar a que
+// termine antes de cerrar la pestaña.
+function enviarLote(eventos){
+  if(!CONTADOR || !eventos.length) return Promise.resolve();
+  var id=idVisitante(); if(!id) return Promise.resolve();
   var dispositivo=esIOS?'ios':(esAndroid?'android':'pc');
+  var cuerpo={
+    id:id, u:usuarioPanel, v:BUILD_ACTUAL+'-'+dispositivo,
+    p:(dispositivo==='pc'?'escritorio':'movil'),
+    h:new Date().getHours(), tz:-(new Date().getTimezoneOffset()),
+    eventos:eventos
+  };
   try{
-    var cuerpo={
-      id:id, ev:ev, u:usuarioPanel,
-      // El dispositivo exacto viaja en la versión porque el Worker guarda ese campo
-      // tal cual; el de plataforma solo distingue móvil de escritorio.
-      v:'1.0-'+dispositivo,
-      p:(dispositivo==='pc'?'escritorio':'movil'),
-      h:new Date().getHours(),
-      tz:-(new Date().getTimezoneOffset())
-    };
-    if(detalle) cuerpo.d=detalle;
-    var p=fetch(CONTADOR+'/ping',{
+    return fetch(CONTADOR+'/ping',{
       method:'POST', mode:'cors', keepalive:true, referrerPolicy:'no-referrer',
       headers:{'content-type':'text/plain'}, body:JSON.stringify(cuerpo)
-    });
-    if(p&&p.catch) p.catch(function(){});
-  }catch(e){}
+    }).catch(function(){});
+  }catch(e){ return Promise.resolve(); }
 }
+// 'contar' queda solo para el botón de copiar (evento suelto, una vez por tipo).
 var contado={};
-function contar(ev){ if(contado[ev]) return; contado[ev]=1; enviar(ev); }
-function emitirVarias(ev,veces){
-  var TOPE=40, n=Math.min(veces|0, TOPE);
-  for(var i=0;i<n;i++) enviar(ev);
-}
-contar('open');
+function contar(ev){ if(contado[ev]) return; contado[ev]=1; enviarLote([{ev:ev}]); }
 
-// Si la pestaña se abrió desde el panel, registra la entrada más los escaneos y
-// bajas acumulados, y se cierra sola: la persona estaba usando el panel y no tiene
-// por qué terminar en esta página. keepalive deja salir los envíos aun al cerrarse.
+// Armado del lote de esta carga.
+var eventos=[{ev:'open'}]; contado['open']=1;
 if(usuarioPanel){
-  contar('registro');
-  if(pendScan>0) emitirVarias('scan_ok', pendScan);
-  bajas.forEach(function(nombre){ enviar('unfollow', nombre); }); // una fila por cuenta
+  eventos.push({ev:'registro'}); contado['registro']=1;
+  var nEsc=Math.min(pendScan|0,300);
+  for(var i=0;i<nEsc;i++) eventos.push({ev:'scan_ok'});
+  bajas.forEach(function(nombre){ eventos.push({ev:'unfollow', d:nombre}); }); // una fila por cuenta
+}
+var envio=enviarLote(eventos);
+
+// Si la pestaña se abrió desde el panel: o avisa que hay versión nueva, o agradece
+// y se cierra sola cuando el envío terminó (o a los 4s como red de seguridad).
+if(usuarioPanel){
+  var buildPanel=(function(){ var m=/[?&]b=([0-9.]{1,10})/.exec(location.search); return m?m[1]:''; })();
+  var viejo = buildPanel && buildPanel!==BUILD_ACTUAL;
   var w=document.querySelector('.wrap');
-  if(w){
+  if(w && viejo){
+    w.innerHTML='<div style="text-align:center;padding:56px 22px;max-width:460px;margin:0 auto">'+
+      '<div style="font-size:2.8rem">⬆️</div>'+
+      '<h2 style="margin:14px 0 8px;border:0;padding:0">Hay una versión nueva</h2>'+
+      '<p class="muted">Tu panel es la v'+buildPanel+' y ya salió la <b>v'+BUILD_ACTUAL+'</b>. '+
+      'Reinstalá el marcador desde esta página para tener las mejoras.<br>Tu actividad de hoy ya quedó registrada.</p></div>';
+    // A propósito NO se cierra: que la persona lo lea y reinstale.
+  } else if(w){
     w.innerHTML='<div style="text-align:center;padding:70px 20px">'+
       '<div style="font-size:2.8rem">💜</div>'+
       '<h2 style="margin:16px 0 8px;border:0;padding:0">¡Listo, @'+usuarioPanel+'!</h2>'+
       '<p class="muted">Ya podés volver al panel.<br>Esta pestaña se cierra sola.</p></div>';
+    var cerrar=function(){ try{ window.close(); }catch(e){} };
+    if(envio&&envio.then) envio.then(cerrar); // cerrar recién cuando el dato salió
+    setTimeout(cerrar,4000);                  // red de seguridad si el envío cuelga
   }
-  setTimeout(function(){ try{ window.close(); }catch(e){} }, 1500);
 }
 </script>
