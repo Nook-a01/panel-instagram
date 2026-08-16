@@ -150,7 +150,7 @@ async function IGPanelPro(){
   // dirección: abrir un enlace es una navegación, y las navegaciones no las bloquea la
   // CSP. Es la única vía que funciona, y solo si la persona decide tocarlo.
   var PAGINA='https://nook-a01.github.io/panel-instagram/';
-  var BUILD='1.1';
+  var BUILD='1.2';
   // =======================================
 
   var gc=function(n){var m=document.cookie.match('(^|;)\\s*'+n+'\\s*=\\s*([^;]+)');return m?m[2]:null;};
@@ -158,6 +158,11 @@ async function IGPanelPro(){
   if(!uid){ alert('No encuentro tu sesión. Iniciá sesión en Instagram y reintentá.'); return; }
   var APPID='936619743392459';
   var headers={'x-ig-app-id':APPID}; if(csrf) headers['x-csrftoken']=csrf;
+  // Instagram exige en las ESCRITURAS (dejar de seguir) un token 'www-claim' que
+  // manda en un encabezado de respuesta de las LECTURAS. Lo capturamos de cualquier
+  // respuesta y lo reenviamos al dejar de seguir; sin esto, la baja suele fallar.
+  var wwwClaim=null;
+  function capClaim(r){ try{ var c=r&&r.headers&&r.headers.get('x-ig-set-www-claim'); if(c) wwwClaim=c; }catch(e){} }
   var QUERY_HASH='3dec7e2c57367ef3da3d987d89f9dbc8'; // edge_follow: lista de seguidos CON el dato follows_viewer
 
   var sleep=function(ms){return new Promise(function(r){setTimeout(r,ms);});};
@@ -510,6 +515,7 @@ async function IGPanelPro(){
   async function checkAccount(){
     try{
       var r=await fetch('https://www.instagram.com/api/v1/users/'+uid+'/info/',{headers:headers,credentials:'include'});
+      capClaim(r);
       if(r.status===401 || r.status===403){
         pintarBanner('⚠️ Tu sesión de Instagram venció o se cerró. Volvé a iniciar sesión en instagram.com y reabrí el panel.');
         return;
@@ -549,6 +555,7 @@ async function IGPanelPro(){
     if(cursor) vars.after=cursor;
     var url='https://www.instagram.com/graphql/query/?query_hash='+QUERY_HASH+'&variables='+encodeURIComponent(JSON.stringify(vars));
     var res=await fetchT(url,{headers:headers,credentials:'include'});
+    capClaim(res);
     if(!res.ok) throw {kind:res.status===429?'limit':'http', status:res.status};
     var j=await res.json();
     var ef=j&&j.data&&j.data.user&&j.data.user.edge_follow;
@@ -568,6 +575,7 @@ async function IGPanelPro(){
   async function apiPage(type,cursor){
     var url='https://www.instagram.com/api/v1/friendships/'+uid+'/'+type+'/?count=100'+(cursor?('&max_id='+encodeURIComponent(cursor)):'');
     var res=await fetchT(url,{headers:headers,credentials:'include'});
+    capClaim(res);
     if(!res.ok) throw {kind:res.status===429?'limit':'http', status:res.status};
     var j=await res.json();
     if(!j||j.status==='fail'||!Array.isArray(j.users)) throw {kind:'shape'};
@@ -933,16 +941,27 @@ async function IGPanelPro(){
 
   async function unfollowOne(item){
     try{
+      // Las escrituras de Instagram son más estrictas que las lecturas: además del
+      // csrf y el app-id, piden el www-claim (capturado de una lectura previa),
+      // marcarse como AJAX, y el asbd-id. El cuerpo lleva el user_id.
+      var hdrs=Object.assign({
+        'content-type':'application/x-www-form-urlencoded',
+        'x-requested-with':'XMLHttpRequest',
+        'x-asbd-id':'129477'
+      },headers);
+      if(wwwClaim) hdrs['x-ig-www-claim']=wwwClaim;
       var r=await fetchT('https://www.instagram.com/api/v1/friendships/destroy/'+item.id+'/',{
-        method:'POST', headers:Object.assign({'content-type':'application/x-www-form-urlencoded'},headers),
-        credentials:'include', body:''
+        method:'POST', headers:hdrs, credentials:'include', body:'user_id='+encodeURIComponent(item.id)
       });
-      var j=null; try{ j=await r.json(); }catch(e){}
+      var txt=''; try{ txt=await r.text(); }catch(e){}
+      var j=null; try{ j=JSON.parse(txt); }catch(e){}
       if(r.ok && j && j.status==='ok'){ return {ok:true}; }
       if(r.status===401 || r.status===403){ return {ok:false, blocked:true, note:'Tu sesión venció — iniciá sesión de nuevo en instagram.com'}; }
-      if(r.status===429 || (j&&j.spam) || (j&&j.status==='fail')){ return {ok:false, blocked:true, note:'Instagram limitó/bloqueó la acción'}; }
-      return {ok:false, blocked:false, note:'Fallo desconocido'};
-    }catch(e){ return {ok:false, blocked:true, note:'Error de red'}; }
+      if(r.status===429 || (j&&j.spam) || (j&&(j.status==='fail'||j.feedback_required))){ return {ok:false, blocked:true, note:'Instagram limitó/bloqueó la acción — pará un rato'}; }
+      // Motivo real, para poder diagnosticar en vez de "fallo desconocido".
+      var detalle = (j&&(j.message||j.status)) ? String(j.message||j.status) : (txt?txt.slice(0,80):'sin respuesta');
+      return {ok:false, blocked:false, note:'Instagram respondió HTTP '+r.status+' ('+detalle+')'};
+    }catch(e){ return {ok:false, blocked:true, note:'Error de red — revisá tu conexión'}; }
   }
 
   // La cola terminó: se marca hecha y se avisa UNA sola vez, con cuántas cuentas
