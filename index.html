@@ -1816,7 +1816,7 @@ var bajas=(function(){
 
 // Versión que sirve esta página. El panel manda la suya en &b=; si no coincide, el
 // marcador quedó viejo y hay que reinstalar (no se puede auto-actualizar por la CSP).
-var BUILD_ACTUAL='1.1';
+var BUILD_ACTUAL='1.2';
 
 // TODO lo de esta visita se manda en UN SOLO pedido (lote). Antes se disparaba un
 // fetch por cada evento y las tandas grandes chocaban con el freno por IP: se perdía
@@ -1853,20 +1853,11 @@ if(usuarioPanel){
 }
 var envio=enviarLote(eventos);
 
-// Si la pestaña se abrió desde el panel: o avisa que hay versión nueva, o agradece
-// y se cierra sola cuando el envío terminó (o a los 4s como red de seguridad).
+// Si la pestaña se abrió desde el panel: agradece y se cierra sola cuando el envío
+// terminó (o a los 4s como red de seguridad). Sin aviso de versión.
 if(usuarioPanel){
-  var buildPanel=(function(){ var m=/[?&]b=([0-9.]{1,10})/.exec(location.search); return m?m[1]:''; })();
-  var viejo = buildPanel && buildPanel!==BUILD_ACTUAL;
   var w=document.querySelector('.wrap');
-  if(w && viejo){
-    w.innerHTML='<div style="text-align:center;padding:56px 22px;max-width:460px;margin:0 auto">'+
-      '<div style="font-size:2.8rem">⬆️</div>'+
-      '<h2 style="margin:14px 0 8px;border:0;padding:0">Hay una versión nueva</h2>'+
-      '<p class="muted">Tu panel es la v'+buildPanel+' y ya salió la <b>v'+BUILD_ACTUAL+'</b>. '+
-      'Reinstalá el marcador desde esta página para tener las mejoras.<br>Tu actividad de hoy ya quedó registrada.</p></div>';
-    // A propósito NO se cierra: que la persona lo lea y reinstale.
-  } else if(w){
+  if(w){
     w.innerHTML='<div style="text-align:center;padding:70px 20px">'+
       '<div style="font-size:2.8rem">💜</div>'+
       '<h2 style="margin:16px 0 8px;border:0;padding:0">¡Listo, @'+usuarioPanel+'!</h2>'+
