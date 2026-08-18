@@ -941,17 +941,19 @@ async function IGPanelPro(){
 
   async function unfollowOne(item){
     try{
-      // Las escrituras de Instagram son más estrictas que las lecturas: además del
-      // csrf y el app-id, piden el www-claim (capturado de una lectura previa),
-      // marcarse como AJAX, y el asbd-id. El cuerpo lleva el user_id.
+      // IMPORTANTE: se usa el endpoint WEB de Instagram, no el de la app móvil.
+      //   web/friendships/{id}/unfollow/  → responde {status:'ok'}  ✅
+      //   friendships/destroy/{id}/       → devuelve el HTML de la app (muerto para web) ❌
+      // Diagnosticado en vivo contra la sesión real. Las escrituras piden csrf, app-id,
+      // marcarse como AJAX y el asbd-id; el cuerpo va vacío.
       var hdrs=Object.assign({
         'content-type':'application/x-www-form-urlencoded',
         'x-requested-with':'XMLHttpRequest',
         'x-asbd-id':'129477'
       },headers);
       if(wwwClaim) hdrs['x-ig-www-claim']=wwwClaim;
-      var r=await fetchT('https://www.instagram.com/api/v1/friendships/destroy/'+item.id+'/',{
-        method:'POST', headers:hdrs, credentials:'include', body:'user_id='+encodeURIComponent(item.id)
+      var r=await fetchT('https://www.instagram.com/api/v1/web/friendships/'+item.id+'/unfollow/',{
+        method:'POST', headers:hdrs, credentials:'include', body:''
       });
       var txt=''; try{ txt=await r.text(); }catch(e){}
       var j=null; try{ j=JSON.parse(txt); }catch(e){}
