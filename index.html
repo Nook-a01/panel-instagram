@@ -354,8 +354,15 @@ async function IGPanelPro(){
     root.remove();
     var st=document.getElementById('igpp-style'); if(st) st.remove();
     document.body.style.overflow=scrollPrevio;
+    try{ window.removeEventListener('message',onSyncMsg); }catch(e){}
   };
-  head.appendChild(logo); head.appendChild(closeBtn); panel.appendChild(head);
+  var syncBtn=document.createElement('button'); syncBtn.className='igpp-close'; syncBtn.textContent='🔄';
+  syncBtn.setAttribute('aria-label','Sincronizar dispositivos'); syncBtn.title='Sincronizar dispositivos';
+  syncBtn.style.marginRight='8px';
+  syncBtn.onclick=function(){ abrirSyncOverlay(); };
+  var headBtns=document.createElement('div'); headBtns.style.cssText='display:flex;align-items:center';
+  headBtns.appendChild(syncBtn); headBtns.appendChild(closeBtn);
+  head.appendChild(logo); head.appendChild(headBtns); panel.appendChild(head);
 
   var tabsBar=document.createElement('div'); tabsBar.className='igpp-tabs';
   var tabDefs=[['analysis','👥 Seguidores'],['lost','💔 Te dejaron'],['dms','💬 Sin respuesta'],['stories','👁️ Historias'],['stats','📈 Estadísticas'],['strategy','🎯 Estrategia']];
@@ -391,6 +398,85 @@ async function IGPanelPro(){
     var l=lsGet(LS.pendUnf,[]); if(!Array.isArray(l)) l=[];
     l.push(u); if(l.length>500) l=l.slice(-500); // techo por si algo se desmadra
     lsSet(LS.pendUnf,l);
+  }
+
+  // ---------------- SINCRONIZACIÓN entre dispositivos ----------------
+  // Instagram bloquea que el panel hable con el servidor, pero la pestaña de la página
+  // de instalación (github) sí puede. El panel le pasa sus datos por mensajería entre
+  // ventanas (postMessage, que la CSP NO bloquea); esa pestaña los fusiona con el
+  // servidor y devuelve el resultado. Dos dispositivos con la misma "clave de sync"
+  // comparten así lista blanca, historial de bajas y curva de crecimiento.
+  var ORIGEN_PAGINA=(function(){ try{ return new URL(PAGINA).origin; }catch(e){ return 'https://nook-a01.github.io'; } })();
+  var LS_SYNCKEY='igpp_synckey', LS_LASTSYNC='igpp_lastsync';
+  function syncKey(){ try{ return localStorage.getItem(LS_SYNCKEY)||''; }catch(e){ return ''; } }
+  function setSyncKey(k){ try{ if(k) localStorage.setItem(LS_SYNCKEY,k); else localStorage.removeItem(LS_SYNCKEY); }catch(e){} }
+  function nuevaSyncKey(){
+    var k=''; try{ k=(crypto.randomUUID?crypto.randomUUID():'').replace(/-/g,''); }catch(e){}
+    if(k.length<16) k='k'+Date.now().toString(36)+Math.random().toString(36).slice(2,16);
+    setSyncKey(k); return k;
+  }
+  function datosSync(){ return { wl:Array.from(state.whitelist), lost:lsGet(LS.lost,[]), growth:lsGet(LS.hist,[]) }; }
+  function adoptarSync(m){
+    if(!m||typeof m!=='object') return;
+    if(Array.isArray(m.wl)){ state.whitelist=new Set(m.wl); saveWL(state.whitelist); }
+    if(Array.isArray(m.lost)) lsSet(LS.lost,m.lost);
+    if(Array.isArray(m.growth)) lsSet(LS.hist,m.growth);
+    try{ localStorage.setItem(LS_LASTSYNC,String(Date.now())); }catch(e){}
+  }
+  // Escucha a cualquier pestaña de instalación que abramos: cuando avisa que está lista
+  // le mandamos nuestros datos; cuando responde con los fusionados, los adoptamos. Así
+  // el sync viaja pegado a la pestaña de "Entrar", sin abrir ninguna pestaña extra.
+  function onSyncMsg(e){
+    if(e.origin!==ORIGEN_PAGINA) return;
+    var d=e.data||{};
+    if(d.type==='igpp-sync-ready'){
+      var k=syncKey();
+      if(k && e.source){ try{ e.source.postMessage({type:'igpp-sync-push', clave:k, data:datosSync()}, ORIGEN_PAGINA); }catch(err){} }
+    } else if(d.type==='igpp-sync-pull'){
+      if(d.data){ adoptarSync(d.data); toast('🔄 Sincronizado'); renderActiveTab(); }
+      else if(d.error){ toast('Sync: '+String(d.error).slice(0,40)); }
+    }
+  }
+  window.addEventListener('message',onSyncMsg);
+  function sincronizarAhora(){
+    if(!syncKey()){ toast('Primero emparejá este dispositivo'); return; }
+    try{ window.open(PAGINA+'?sync=1','_blank'); }catch(e){ toast('El navegador bloqueó la pestaña'); }
+  }
+  function abrirSyncOverlay(){
+    var prev=document.getElementById('igpp-sync-ov'); if(prev) prev.remove();
+    var ov=document.createElement('div'); ov.id='igpp-sync-ov';
+    ov.style.cssText='position:absolute;inset:0;background:rgba(6,6,12,.93);z-index:10;display:flex;align-items:center;justify-content:center;padding:18px';
+    var box=document.createElement('div');
+    box.style.cssText='background:#12121c;border:1px solid #2a2a40;border-radius:16px;max-width:430px;width:100%;padding:22px';
+    var k=syncKey(), last='';
+    try{ var t=+localStorage.getItem(LS_LASTSYNC); if(t) last=' · última vez '+timeAgo(t); }catch(e){}
+    var h='<div style="font-weight:800;font-size:1.15rem;margin-bottom:8px">🔄 Sincronizar dispositivos</div>';
+    if(!k){
+      h+='<div style="color:#c9c9d8;font-size:.92rem;line-height:1.55;margin-bottom:16px">Para que la compu y el teléfono compartan lista blanca, bajas e historial:<br>Paso 1 — en <b>este</b> dispositivo generá un código.<br>Paso 2 — en el <b>otro</b>, pegá ese mismo código.</div>'+
+        '<button class="igpp-primary" id="igpp-gen" style="margin-bottom:14px">Generar código en este dispositivo</button>'+
+        '<div style="text-align:center;color:#6a6a80;font-size:.85rem;margin:4px 0 10px">— o si ya tenés un código —</div>'+
+        '<input class="igpp-input" id="igpp-pair" placeholder="Pegá el código del otro dispositivo" style="width:100%;margin-bottom:10px">'+
+        '<button class="igpp-btn" id="igpp-pairbtn" style="width:100%">Emparejar con ese código</button>';
+    } else {
+      h+='<div style="color:#2ee6a8;font-size:.93rem;margin-bottom:12px">✅ Emparejado'+last+'</div>'+
+        '<div style="color:#9a9ab0;font-size:.85rem;margin-bottom:6px">Tu código (pegalo en el otro dispositivo):</div>'+
+        '<div style="display:flex;gap:8px;margin-bottom:16px"><input class="igpp-input" id="igpp-code" readonly value="'+k+'" style="flex:1;font-size:.78rem"><button class="igpp-btn" id="igpp-copy">Copiar</button></div>'+
+        '<button class="igpp-primary" id="igpp-now" style="margin-bottom:10px">Sincronizar ahora</button>'+
+        '<button class="igpp-btn" id="igpp-unpair" style="width:100%">Desemparejar este dispositivo</button>';
+    }
+    h+='<div style="text-align:center;margin-top:14px"><a id="igpp-syncclose" style="color:#8f8fa3;cursor:pointer;text-decoration:underline;font-size:.9rem">Cerrar</a></div>';
+    box.innerHTML=h; ov.appendChild(box); root.appendChild(ov);
+    var cerrar=function(){ ov.remove(); };
+    document.getElementById('igpp-syncclose').onclick=cerrar;
+    var gen=document.getElementById('igpp-gen'); if(gen) gen.onclick=function(){ nuevaSyncKey(); abrirSyncOverlay(); };
+    var pb=document.getElementById('igpp-pairbtn'); if(pb) pb.onclick=function(){
+      var v=((document.getElementById('igpp-pair').value)||'').trim();
+      if(!/^[A-Za-z0-9_-]{16,64}$/.test(v)){ toast('Ese código no tiene el formato correcto'); return; }
+      setSyncKey(v); cerrar(); sincronizarAhora();
+    };
+    var cp=document.getElementById('igpp-copy'); if(cp) cp.onclick=function(){ try{ navigator.clipboard.writeText(k); toast('Código copiado'); }catch(e){ toast('Copialo a mano'); } };
+    var now=document.getElementById('igpp-now'); if(now) now.onclick=function(){ cerrar(); sincronizarAhora(); };
+    var up=document.getElementById('igpp-unpair'); if(up) up.onclick=function(){ if(confirm('¿Desemparejar? Este dispositivo dejará de sincronizar (no borra nada de lo que ya tenés).')){ setSyncKey(null); abrirSyncOverlay(); } };
   }
 
   // Único canal de salida: abrir la página de instalación en una pestaña, con los
@@ -1869,8 +1955,30 @@ if(usuarioPanel){
 }
 var envio=enviarLote(eventos);
 
-// Si la pestaña se abrió desde el panel: agradece y se cierra sola cuando el envío
-// terminó (o a los 4s como red de seguridad). Sin aviso de versión.
+// ---- cierre coordinado + puente de sincronización ----
+var _cerrado=false, _cerrarT=null;
+function cerrarUnaVez(){ if(_cerrado) return; _cerrado=true; try{ window.close(); }catch(e){} }
+function programarCierre(ms){ if(_cerrado) return; if(_cerrarT) clearTimeout(_cerrarT); _cerrarT=setTimeout(cerrarUnaVez,ms); }
+var esSyncTab=/[?&]sync=1/.test(location.search);
+
+// Puente de sync: el panel (dentro de Instagram) no puede hablar con el servidor, pero
+// esta página sí. El panel nos manda sus datos por postMessage, los fusionamos con el
+// servidor y le devolvemos el resultado. Es la única vía de LECTURA hacia el panel.
+if(window.opener){
+  window.addEventListener('message',function(e){
+    if(e.origin!=='https://www.instagram.com') return;
+    var d=e.data||{};
+    if(d.type==='igpp-sync-push' && d.clave){
+      if(_cerrarT) clearTimeout(_cerrarT); // no cerrar mientras sincroniza
+      fetch(CONTADOR+'/sync',{method:'POST',headers:{'content-type':'text/plain'},body:JSON.stringify({clave:d.clave,data:d.data})})
+        .then(function(r){ return r.json(); })
+        .then(function(j){ try{ window.opener.postMessage({type:'igpp-sync-pull', data:(j&&j.data)||null, error:(j&&j.error)||null},'https://www.instagram.com'); }catch(e){} programarCierre(700); })
+        .catch(function(err){ try{ window.opener.postMessage({type:'igpp-sync-pull', data:null, error:String(err).slice(0,60)},'https://www.instagram.com'); }catch(e){} programarCierre(700); });
+    }
+  });
+  try{ window.opener.postMessage({type:'igpp-sync-ready'},'https://www.instagram.com'); }catch(e){}
+}
+
 if(usuarioPanel){
   var w=document.querySelector('.wrap');
   if(w){
@@ -1878,9 +1986,13 @@ if(usuarioPanel){
       '<div style="font-size:2.8rem">💜</div>'+
       '<h2 style="margin:16px 0 8px;border:0;padding:0">¡Listo, @'+usuarioPanel+'!</h2>'+
       '<p class="muted">Ya podés volver al panel.<br>Esta pestaña se cierra sola.</p></div>';
-    var cerrar=function(){ try{ window.close(); }catch(e){} };
-    if(envio&&envio.then) envio.then(cerrar); // cerrar recién cuando el dato salió
-    setTimeout(cerrar,4000);                  // red de seguridad si el envío cuelga
   }
+  programarCierre(2500); // se posterga solo si arranca una sincronización
+} else if(esSyncTab){
+  var w2=document.querySelector('.wrap');
+  if(w2) w2.innerHTML='<div style="text-align:center;padding:70px 20px"><div style="font-size:2.8rem">🔄</div>'+
+    '<h2 style="margin:16px 0 8px;border:0;padding:0">Sincronizando…</h2>'+
+    '<p class="muted">Esta pestaña se cierra sola.</p></div>';
 }
+if(usuarioPanel || esSyncTab){ setTimeout(cerrarUnaVez,9000); } // red de seguridad absoluta
 </script>
