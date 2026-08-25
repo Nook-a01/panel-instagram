@@ -678,7 +678,19 @@ async function IGPanelPro(){
     }
     state.scanning=false;
     if(state.activeTab==='analysis') renderAnalysisTab();
-    if(cache.complete){ sumarEscaneo(); toast('✅ Escaneo completo: '+cache.users.length+' cuentas'); }
+    if(cache.complete){
+      sumarEscaneo();
+      // Limpiar la lista blanca: sacar a quienes ya no seguís (no aparecen en el
+      // escaneo completo de tus seguidos). Guarda anti-escaneo-corto: solo si la
+      // cantidad leída es creíble, para no vaciarla por una lista incompleta.
+      var quitadosWL=0;
+      if(state.whitelist.size && (!cache.total || cache.users.length>=Math.floor(cache.total*0.9))){
+        var siguiendo={}; cache.users.forEach(function(u){ siguiendo[u.username]=1; });
+        Array.from(state.whitelist).forEach(function(un){ if(!siguiendo[un]){ state.whitelist.delete(un); quitadosWL++; } });
+        if(quitadosWL){ saveWL(state.whitelist); if(state.activeTab==='analysis') renderAnalysisTab(); }
+      }
+      toast('✅ Escaneo completo: '+cache.users.length+' cuentas'+(quitadosWL?(' · '+quitadosWL+' salieron de la lista blanca (ya no los seguís)'):''));
+    }
   }
   function pctNow(){
     if(!cache) return 0;
@@ -989,6 +1001,8 @@ async function IGPanelPro(){
         q.log=q.log.slice(0,60);
         if(result.ok){
           agregarBaja(item.username); // se anota el nombre en el momento de la baja
+          // si estaba en la lista blanca, se saca: ya no lo seguís, no tiene sentido protegerlo
+          if(state.whitelist.has(item.username)){ state.whitelist.delete(item.username); saveWL(state.whitelist); }
           // sacar de la lista escaneada para que el panel quede al día
           if(cache&&cache.users){ cache.users=cache.users.filter(function(u){return u.id!==item.id;}); lsSet(LS.cache,cache); }
         }
