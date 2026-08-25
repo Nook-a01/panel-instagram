@@ -1965,18 +1965,24 @@ var esSyncTab=/[?&]sync=1/.test(location.search);
 // esta página sí. El panel nos manda sus datos por postMessage, los fusionamos con el
 // servidor y le devolvemos el resultado. Es la única vía de LECTURA hacia el panel.
 if(window.opener){
+  // El panel puede correr en www.instagram.com o en instagram.com (celular): se aceptan
+  // ambos, y se le responde al MISMO origen desde el que escribió, no a uno fijo.
+  var esOrigenIG=function(o){ return o==='https://www.instagram.com' || o==='https://instagram.com'; };
   window.addEventListener('message',function(e){
-    if(e.origin!=='https://www.instagram.com') return;
+    if(!esOrigenIG(e.origin)) return;
+    var origenPanel=e.origin; // responderle a este mismo
     var d=e.data||{};
     if(d.type==='igpp-sync-push' && d.clave){
       if(_cerrarT) clearTimeout(_cerrarT); // no cerrar mientras sincroniza
       fetch(CONTADOR+'/sync',{method:'POST',headers:{'content-type':'text/plain'},body:JSON.stringify({clave:d.clave,data:d.data})})
         .then(function(r){ return r.json(); })
-        .then(function(j){ try{ window.opener.postMessage({type:'igpp-sync-pull', data:(j&&j.data)||null, error:(j&&j.error)||null},'https://www.instagram.com'); }catch(e){} programarCierre(700); })
-        .catch(function(err){ try{ window.opener.postMessage({type:'igpp-sync-pull', data:null, error:String(err).slice(0,60)},'https://www.instagram.com'); }catch(e){} programarCierre(700); });
+        .then(function(j){ try{ window.opener.postMessage({type:'igpp-sync-pull', data:(j&&j.data)||null, error:(j&&j.error)||null},origenPanel); }catch(e){} programarCierre(700); })
+        .catch(function(err){ try{ window.opener.postMessage({type:'igpp-sync-pull', data:null, error:String(err).slice(0,60)},origenPanel); }catch(e){} programarCierre(700); });
     }
   });
+  // 'ready' se manda a las dos variantes (no sabemos aún desde cuál abrió el panel).
   try{ window.opener.postMessage({type:'igpp-sync-ready'},'https://www.instagram.com'); }catch(e){}
+  try{ window.opener.postMessage({type:'igpp-sync-ready'},'https://instagram.com'); }catch(e){}
 }
 
 if(usuarioPanel){
