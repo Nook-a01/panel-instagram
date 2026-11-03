@@ -20,7 +20,7 @@
 
 <style>
 
-  :root{--bg:#08080c;--card:#101018;--text:#f4f4f8;--muted:#8f8fa3;--border:#232332;
+  :root{--bg:#07070b;--card:#0e0e16;--text:#f4f4f8;--muted:#9a9ab0;--border:#232332;--acc:#ccff00;
 
     --g1:#405de6;--g2:#c13584;--g3:#f56040;--red:#ff3b6b;--green:#2ee6a8;--chip:#1a1a26}
 
@@ -36,9 +36,9 @@
 
   .wrap{max-width:760px;margin:0 auto;padding:32px 18px 80px}
 
-  h1{font-size:1.8rem;display:flex;align-items:center;gap:12px;margin:.2rem 0 .5rem}
+  h1{font-size:1.7rem;font-weight:800;letter-spacing:.6px;text-transform:uppercase;display:flex;align-items:center;gap:12px;margin:.2rem 0 .5rem}
 
-  .dot{width:34px;height:34px;border-radius:10px;flex:0 0 auto;background:linear-gradient(45deg,var(--g1),var(--g2),var(--g3));box-shadow:0 4px 18px rgba(193,53,132,.45)}
+  .dot{width:30px;height:30px;border-radius:8px;flex:0 0 auto;background:var(--acc);box-shadow:0 0 18px rgba(204,255,0,.45)}
 
   .lead{color:var(--muted);font-size:1.02rem;margin:0 0 4px}
 
@@ -86,13 +86,13 @@
 
     background:var(--chip);color:var(--muted);font-weight:700;font-size:.95rem;cursor:pointer;transition:all .15s}
 
-  .seg button.on{color:#fff;border-color:#3a3a55;background:linear-gradient(45deg,rgba(64,93,230,.32),rgba(193,53,132,.32))}
+  .seg button.on{color:#0a0a0a;border-color:var(--acc);background:var(--acc)}
 
   .plat{display:none}.plat.on{display:block}
 
   .big{display:block;width:100%;padding:16px;border:none;border-radius:14px;font-weight:800;font-size:1.05rem;
 
-    cursor:pointer;color:#fff;background:linear-gradient(45deg,var(--g1),var(--g2),var(--g3));box-shadow:0 6px 22px rgba(193,53,132,.3)}
+    cursor:pointer;color:#0a0a0a;background:var(--acc);box-shadow:0 6px 22px rgba(204,255,0,.28)}
 
   .tip{font-size:.88rem;color:var(--muted);margin:14px 0 0;padding:12px 14px;border:1px solid var(--border);
 
@@ -100,9 +100,19 @@
 
   .tip b{color:#e8b8d8}
 
-  @media(max-width:620px){h1{font-size:1.45rem}.wrap{padding:22px 14px 60px}.card{padding:16px;border-radius:15px}
+  .chrome{border:1px solid var(--border);border-radius:16px;background:rgba(0,0,0,.6);margin:8px 0 20px;overflow:hidden}
+  .chrome .bar{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border)}
+  .chrome .sq{width:18px;height:18px;border-radius:5px;background:var(--acc);box-shadow:0 0 12px rgba(204,255,0,.5);flex:0 0 auto}
+  .chrome .ttl{font-weight:800;letter-spacing:.5px;font-size:.92rem;text-transform:uppercase}
+  .chrome .ttl b{background:linear-gradient(45deg,var(--g2),var(--g3));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .chrome .vv{margin-left:auto;color:var(--muted);font-size:.72rem;font-weight:700}
+  .chrome .tabs{display:flex;gap:2px;padding:10px 12px;overflow-x:auto;scrollbar-width:none}
+  .chrome .tabs::-webkit-scrollbar{display:none}
+  .chrome .tabs span{white-space:nowrap;font-size:.78rem;font-weight:700;color:var(--muted);padding:6px 9px;border-radius:8px}
+  .chrome .tabs span.on{color:var(--acc)}
+  @media(max-width:620px){h1{font-size:1.4rem}.wrap{padding:22px 14px 60px}.card{padding:16px;border-radius:15px}
 
-    .seg button{font-size:.84rem;padding:12px 4px}}
+    .seg button{font-size:.84rem;padding:12px 4px}.chrome .tabs span{font-size:.72rem}}
 
 </style>
 
@@ -113,6 +123,11 @@
   <h1><span class="dot"></span> Panel de <b style="background:linear-gradient(45deg,#c13584,#f56040);-webkit-background-clip:text;background-clip:text;color:transparent">Instagram</b></h1>
 
   <p class="lead">Mirá quién no te sigue de vuelta, quién ve tus Historias y cómo crece tu cuenta. Funciona desde tu propio navegador, en computadora y en celular.</p>
+
+  <div class="chrome" aria-hidden="true">
+    <div class="bar"><span class="sq"></span><span class="ttl">PANEL DE <b>INSTAGRAM</b></span><span class="vv">V1.4</span></div>
+    <div class="tabs"><span class="on">👥 Seguidores</span><span>💔 Te dejaron</span><span>💬 Sin respuesta</span><span>👁️ Historias</span><span>📈 Estadísticas</span><span>🎯 Estrategia</span></div>
+  </div>
 
 
 
