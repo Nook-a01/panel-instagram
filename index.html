@@ -121,7 +121,7 @@
 
   <h1><span class="dot"></span> Panel de <b style="background:linear-gradient(45deg,#c13584,#f56040);-webkit-background-clip:text;background-clip:text;color:transparent">Instagram</b></h1>
 
-  <p class="lead">Mirá quién no te sigue de vuelta, quién ve tus Historias y cómo crece tu cuenta. Funciona desde tu propio navegador, en computadora y en celular.</p>
+  <p class="lead">Mirá quién no te sigue de vuelta, quién ve tus Historias y cómo crece tu cuenta. Se usa desde la <b>computadora</b>, con tu sesión de Instagram abierta en el navegador.</p>
 
   <div class="chrome" aria-hidden="true">
     <div class="bar"><span class="sq"></span><span class="ttl">PANEL DE <b>INSTAGRAM</b></span><span class="vv">V1.4</span></div>
@@ -154,21 +154,13 @@
 
   <div class="card">
 
-    <h2>📥 Instalar</h2>
+    <h2>📥 Instalar (en la computadora)</h2>
 
-    <div class="seg" id="seg">
-
-      <button data-p="pc">💻 Computadora</button>
-
-      <button data-p="android">🤖 Android</button>
-
-      <button data-p="ios">🍎 iPhone</button>
-
-    </div>
+    
 
 
 
-    <div class="plat" id="p-pc">
+    <div id="p-pc">
 
       <ol>
 
@@ -188,79 +180,13 @@
 
 
 
-    <div class="plat" id="p-android">
-
-      <p class="muted" style="margin:0 0 14px">Tenés que tener la sesión abierta en <b>el navegador</b> (instagram.com), no en la app de Instagram.</p>
-
-      <button class="big" id="copyBmA">📋 Copiar el código</button>
-
-      <ol style="margin-top:18px">
-
-        <li>Copiá el código con el botón de arriba.</li>
-
-        <li>En Chrome, entrá a cualquier página y guardala como marcador (la estrella ☆).</li>
-
-        <li>Abrí <b>⋮ → Marcadores</b>, buscá el que acabás de crear y tocá el lápiz para <b>editarlo</b>.</li>
-
-        <li>Borrá lo que haya en <b>Dirección URL</b>, pegá el código, y ponele de nombre <code>panel</code>.</li>
-
-        <li>Entrá a instagram.com, escribí <code>panel</code> en la barra de direcciones y tocá el marcador que aparece.</li>
-
-      </ol>
-
-      <p class="tip"><b>Lo que más falla:</b> el código tiene que empezar con <code>javascript:</code>. Algunas versiones de Chrome lo borran solas al pegar. Fijate que esté, y si no, escribilo a mano justo antes de lo que pegaste.</p>
-
-    </div>
-
-
-
-    <div class="plat" id="p-ios">
-
-      <p class="muted" style="margin:0 0 14px">Tenés que tener la sesión abierta en <b>Safari</b> (instagram.com), no en la app de Instagram.</p>
-
-      <button class="big" id="copyBmI">📋 Copiar el código</button>
-
-      <ol style="margin-top:18px">
-
-        <li>Copiá el código con el botón de arriba.</li>
-
-        <li>En Safari, entrá a cualquier página, tocá <b>compartir</b> y elegí <b>"Añadir marcador"</b>. Guardalo.</li>
-
-        <li>Tocá el ícono de <b>marcadores 📖</b>, después <b>Editar</b>, y elegí el que creaste.</li>
-
-        <li>Borrá la dirección, pegá el código, y ponele de nombre <code>panel</code>.</li>
-
-        <li>Entrá a instagram.com, escribí <code>panel</code> en la barra de direcciones y tocá el marcador que aparece.</li>
-
-      </ol>
-
-      <p class="tip"><b>Lo que más falla:</b> el código tiene que empezar con <code>javascript:</code>. Si al pegar te lo borra, escribilo a mano justo antes de lo que pegaste.</p>
-
-      <details>
-
-        <summary>Otra opción: la app Atajos</summary>
-
-        <p style="margin:12px 0"><button class="btn" id="copyRawI">📋 Copiar código para Atajos</button></p>
-
-        <ol>
-
-          <li>Abrí <b>Atajos</b> → nuevo atajo → acción <b>"Ejecutar JavaScript en la página web"</b>.</li>
-
-          <li>Pegá el código ahí y activá <b>"Mostrar en menú de compartir"</b>.</li>
-
-          <li>Entrá a instagram.com, tocá compartir y elegí el atajo.</li>
-
-        </ol>
-
-      </details>
-
-    </div>
+    
 
   </div>
 
 
 
-  <p class="muted" style="text-align:center;margin-top:26px">Si ya lo tenías instalado de antes, borrá el botón o marcador viejo:<br>el código viaja adentro, así que el anterior se queda con la versión vieja.</p>
+  <p class="muted" style="text-align:center;margin-top:26px">Si ya tenías el botón de antes, borralo y arrastrá este de nuevo. Es una sola vez: después se actualiza solo.</p>
 
 </div>
 
@@ -412,47 +338,7 @@ function alCopiar(id,texto){
 
 }
 
-alCopiar('copyBmA',urlMarcador);   // Android → marcador
 
-alCopiar('copyBmI',urlMarcador);   // iPhone  → marcador
-
-alCopiar('copyRawI',code);         // iPhone  → app Atajos
-
-
-
-// ---- mostrar de entrada la plataforma que corresponde ----
-
-var ua=navigator.userAgent;
-
-var esIOS=/iPad|iPhone|iPod/.test(ua)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
-
-var esAndroid=/Android/.test(ua);
-
-var botones=document.querySelectorAll('#seg button');
-
-function mostrar(p){
-
-  ['pc','android','ios'].forEach(function(k){
-
-    document.getElementById('p-'+k).className='plat'+(k===p?' on':'');
-
-  });
-
-  Array.prototype.forEach.call(botones,function(b){
-
-    b.className=(b.getAttribute('data-p')===p)?'on':'';
-
-  });
-
-}
-
-Array.prototype.forEach.call(botones,function(b){
-
-  b.addEventListener('click',function(){ mostrar(b.getAttribute('data-p')); });
-
-});
-
-mostrar(esIOS?'ios':(esAndroid?'android':'pc'));
 
 
 
@@ -570,7 +456,7 @@ function enviarLote(eventos){
 
   var id=idVisitante(); if(!id) return Promise.resolve();
 
-  var dispositivo=esIOS?'ios':(esAndroid?'android':'pc');
+  var dispositivo=/iPad|iPhone|iPod/.test(navigator.userAgent)?'ios':(/Android/.test(navigator.userAgent)?'android':'pc');
 
   var cuerpo={
 
