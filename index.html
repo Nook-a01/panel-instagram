@@ -223,117 +223,28 @@
 </div>
 
 <script>
-async function IGPanelPro() {
-  if (document.getElementById('igpp-root')) return;
+document.addEventListener('DOMContentLoaded', function() {
+  var botones = document.querySelectorAll('#seg button');
+  var ua = navigator.userAgent;
+  var esIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  var esAndroid = /Android/.test(ua);
 
-  var IGHOST = location.hostname;
-  if (!/(^|\.)instagram\.com$/.test(IGHOST)) {
-    alert('Abrí esto estando en una pestaña de instagram.com con tu sesión iniciada.');
-    return;
-  }
-  if (IGHOST !== 'www.instagram.com' && IGHOST !== 'instagram.com') {
-    if (confirm('Estás en ' + IGHOST + ', una sección de Instagram donde el panel no funciona.\n\n¿Te llevo a www.instagram.com?')) {
-      location.href = 'https://www.instagram.com/';
-    }
-    return;
-  }
-
-  var TELEMETRY_URL = '';
-  var PAGINA = 'https://nook-a01.github.io/panel-instagram/';
-  var BUILD = '1.2';
-
-  var gc = function(n) {
-    var m = document.cookie.match('(^|;)\\s*' + n + '\\s*=\\s*([^;]+)');
-    return m ? m[2] : null;
-  };
-
-  var uid = gc('ds_user_id'), csrf = gc('csrftoken');
-  if (!uid) { alert('No encuentro tu sesión. Iniciá sesión en Instagram y reintentá.'); return; }
-
-  var APPID = '936619743392459';
-  var headers = { 'x-ig-app-id': APPID };
-  if (csrf) headers['x-csrftoken'] = csrf;
-
-  var wwwClaim = null;
-  function capClaim(r) {
-    try {
-      var c = r && r.headers && r.headers.get('x-ig-set-www-claim');
-      if (c) wwwClaim = c;
-    } catch(e) {}
+  function mostrar(p) {
+    ['pc','android','ios'].forEach(function(k) {
+      var el = document.getElementById('p-' + k);
+      if (el) el.className = 'plat' + (k === p ? ' on' : '');
+    });
+    Array.prototype.forEach.call(botones, function(b) {
+      b.className = (b.getAttribute('data-p') === p) ? 'on' : '';
+    });
   }
 
-  var QUERY_HASH = '3dec7e2c57367ef3da3d987d89f9dbc8';
+  Array.prototype.forEach.call(botones, function(b) {
+    b.addEventListener('click', function() { mostrar(b.getAttribute('data-p')); });
+  });
 
-  var sleep = function(ms) { return new Promise(function(r) { setTimeout(r, ms); }); };
-
-  function fetchT(url, opts, ms) {
-    ms = ms || 20000;
-    if (typeof AbortController === 'undefined') return fetch(url, opts);
-    var ac = new AbortController();
-    var t = setTimeout(function() { ac.abort(); }, ms);
-    var o = Object.assign({}, opts || {}, { signal: ac.signal });
-    return fetch(url, o).then(
-      function(r) { clearTimeout(t); return r; },
-      function(e) { clearTimeout(t); throw e; }
-    );
-  }
-
-  function fmt(ms) {
-    if (ms < 0) ms = 0;
-    var s = Math.floor(ms / 1000);
-    var m = Math.floor(s / 60);
-    s = s % 60;
-    return m + ':' + String(s).padStart(2, '0');
-  }
-
-  function timeAgo(ms) {
-    var s = Math.floor((Date.now() - ms) / 1000);
-    if (s < 60) return 'recién';
-    var m = Math.floor(s / 60);
-    if (m < 60) return 'hace ' + m + ' min';
-    var h = Math.floor(m / 60);
-    if (h < 24) return 'hace ' + h + ' h';
-    var d = Math.floor(h / 24);
-    return 'hace ' + d + ' día' + (d > 1 ? 's' : '');
-  }
-
-  var LS = {
-    cache: 'igpp_cache_' + uid,
-    wl: 'igpp_wl_' + uid,
-    q: 'igpp_q_' + uid,
-    sv: 'igpp_sv_' + uid,
-    counts: 'igpp_counts_' + uid,
-    hist: 'igpp_hist_' + uid,
-    week: 'igpp_week_' + uid,
-    svlog: 'igpp_svlog_' + uid,
-    pendScan: 'igpp_pscan_' + uid,
-    pendUnf: 'igpp_punf_' + uid,
-    flwrs: 'igpp_flwrs_' + uid,
-    lost: 'igpp_lost_' + uid
-  };
-
-  function lsGet(k, fb) {
-    try {
-      var v = JSON.parse(localStorage.getItem(k));
-      return v === null || v === undefined ? fb : v;
-    } catch(e) { return fb; }
-  }
-
-  function lsSet(k, v) {
-    try {
-      if (v === null) localStorage.removeItem(k);
-      else localStorage.setItem(k, JSON.stringify(v));
-    } catch(e) {}
-  }
-
-  function loadWL() { return new Set(lsGet(LS.wl, [])); }
-  function saveWL(s) { lsSet(LS.wl, Array.from(s)); }
-
-  // Inicializar interfaz y estilos...
-  console.log("Panel de Instagram inicializado correctamente.");
-}
-
-IGPanelPro();
+  mostrar(esIOS ? 'ios' : (esAndroid ? 'android' : 'pc'));
+});
 </script>
 </body>
 </html>
